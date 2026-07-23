@@ -1,0 +1,10 @@
+Beginner's First Speedmap (1 Hour) / BFS1H.wad
+Copyright 2022 SuyaSS. Released 22 May 2022 under CC BY 4.0:
+https://creativecommons.org/licenses/by/4.0/
+
+Official source:
+https://www.gamers.org/pub/idgames/levels/doom2/Ports/a-c/bfs1h.zip
+https://www.gamers.org/pub/idgames/levels/doom2/Ports/a-c/bfs1h.txt
+
+idk OS transforms and rasterizes the MAP01 geometry for this two-minute demo.
+The original WAD is otherwise unmodified. No Doom IWAD assets are included.

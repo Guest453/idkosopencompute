@@ -1,0 +1,1 @@
+return {id="inferno",name="inferno: bfs1h demo",version="2.0.0",author="idk os / SuyaSS",entry="main.lua",icon="game",color=0xd05a3a,description="a two-minute transformed MAP01 raycaster demo",package="inferno-bfs1h-map01-demo",files={"manifest.lua","main.lua","BFS1H.wad","LICENSE-BFS1H.txt"}}

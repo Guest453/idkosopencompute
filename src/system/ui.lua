@@ -9,6 +9,7 @@ function ui.renderer(gpu, width, height)
   local frame, gpuFg, gpuBg = 0, nil, nil
   local clips = {{x1=1,y1=1,x2=width,y2=height}}
   local depthOk, depth = pcall(gpu.getDepth)
+  r.depth=depthOk and depth or 1
   local upperOk,upperHalf=pcall(unicode.char,0x2580)
   local lowerOk,lowerHalf=pcall(unicode.char,0x2584)
   r.semiPixels = depthOk and depth >= 4 and upperOk and lowerOk and type(upperHalf)=="string" and type(lowerHalf)=="string" and unicode.len(upperHalf)==1 and unicode.len(lowerHalf)==1
@@ -143,28 +144,63 @@ function ui.button(gpu,x,y,w,label,active,activeBg,inactiveBg)
 end
 function ui.inside(px,py,x,y,w,h) return px>=x and py>=y and px<x+w and py<y+h end
 
-local iconPatterns={
-  files={"11110","10001","11111"}, store={"01110","11111","10101"},
-  terminal={"10000","01000","00111"}, settings={"10101","01110","10101"},
-  calculator={"11111","10101","11111"}, notes={"11110","10100","11110"},
-  todo={"10010","10100","01000"}, timer={"01110","10101","01110"},
-  systeminfo={"00100","11111","01110"}, taskmanager={"10101","11111","01010"},
-  diskusage={"01110","11111","01110"}
+-- compact cell art: each seven-character row indexes a small per-image palette;
+-- dots are transparent. this retains shape and color without large pixel tables.
+local iconArt={
+  files={{0xf5b942,0xffd66b,0x4c8bd9},{".111...","122222.","133332.","133332.",".11111."}},
+  store={{0x36b37e,0x7ee2b8,0xffffff},{"..333..",".31113.","1111111","1222221",".11111."}},
+  terminal={{0x202a38,0x4fd1a1,0xe8f0f7},{"1111111","1222221","1232221","1223321","1111111"}},
+  settings={{0x65758b,0xa9b8c9,0x49a4e8},{"1.111.1",".12321.","1123211",".12321.","1.111.1"}},
+  calculator={{0x3e78bd,0xdceaff,0x67d2a5},{"1111111","1222221","1111111","1331331","1111111"}},
+  systeminfo={{0x6b62c9,0xbab5ff,0xffffff},{"..111..",".12221.","..131..","..131..",".11111."}},
+  taskmanager={{0x29384a,0x52c7ea,0xf06f7d},{"1111111","1222231","1213231","1231211","1111111"}},
+  notes={{0xf2f4f7,0x5d8ed6,0xf0b84b},{".11111.",".12221.",".13331.",".12221.",".11111."}},
+  timer={{0x7d65c1,0xc9baff,0xffffff},{"..111..",".12221.","1233321",".12321.","..111.."}},
+  todo={{0x35a870,0xe7fff5,0x2d6ca8},{".11111.",".12221.",".13221.",".12231.",".11111."}},
+  diskusage={{0x377fa8,0x73c6df,0xf4c95d},{"..111..",".12221.","1222221","1333321",".11111."}},
+  calendar={{0xd85b62,0xffffff,0x5794d0},{".11111.","1222221","1331331","1323331",".11111."}},
+  components={{0x4c6f87,0x7dd8c3,0xf1c75b},{"..121..",".11211.","1212121",".11311.","..121.."}},
+  sketch={{0x6b5fc7,0xffca5c,0x53c6a2},{".....11","...1121",".11221.","12221..","111...."}},
+  game={{0x394a62,0x68d391,0xf36f76},{".11111.","1221221","1232221","1221321",".11111."}}
 }
 local iconColors={0x4f8fe8,0x40b887,0xa06ee1,0xe0874c,0xd95f70,0x3fa7b5}
+local iconCache,iconCacheSize={},0
 
--- images are tiny row-major tables; absent cells are transparent.
-function ui.icon(name,color)
-  name=tostring(name or "app")
+local function fallbackArt(name,color)
+  local hash=0 for i=1,#name do hash=(hash*33+name:byte(i))%65521 end
+  local rows={}
+  for y=1,5 do
+    local row={}
+    for x=1,7 do
+      local edge=x==1 or x==7 or y==1 or y==5
+      row[x]=edge and "1" or (((hash+17*x+31*y)%(4+x+y)<2) and "2" or ".")
+    end
+    rows[y]=table.concat(row)
+  end
+  return {{color,0xffffff,0x26384a},rows}
+end
+
+function ui.icon(name,color,size)
+  name=tostring(name or "app"):lower()
+  local cacheKey=name..":"..tostring(color or "")..":"..tostring(size or "full")
+  if iconCache[cacheKey] then return iconCache[cacheKey] end
   local hash=0 for i=1,#name do hash=(hash+name:byte(i)*i)%997 end
-  local pattern=iconPatterns[name] or {"01110","1"..((hash%2==0) and "010" or "101").."1","01110"}
-  color=tonumber(color) or iconColors[(hash%#iconColors)+1]
-  local image={width=5,height=3,cells={}}
-  for y,row in ipairs(pattern) do
-    for x=1,5 do
-      if row:sub(x,x)=="1" then image.cells[(y-1)*5+x]={char=" ",bg=color,fg=0xffffff} end
+  local suppliedColor=tonumber(color)
+  local art=iconArt[name] or fallbackArt(name,suppliedColor or iconColors[(hash%#iconColors)+1])
+  local palette={table.unpack(art[1])}
+  if suppliedColor and suppliedColor>=0 and suppliedColor<=0xffffff then palette[1]=suppliedColor end
+  local small=size=="small" or tonumber(size)==3
+  local image={width=small and 5 or 7,height=small and 3 or 5,cells={}}
+  for y=1,image.height do
+    local sy=small and ({1,3,5})[y] or y
+    for x=1,image.width do
+      local sx=small and ({1,2,4,6,7})[x] or x
+      local key=art[2][sy]:sub(sx,sx)
+      local index=tonumber(key)
+      if index and palette[index] then image.cells[(y-1)*image.width+x]={char=" ",bg=palette[index],fg=palette[index]} end
     end
   end
+  if #cacheKey<96 and iconCacheSize<128 then iconCache[cacheKey]=image iconCacheSize=iconCacheSize+1 end
   return image
 end
 
@@ -173,7 +209,16 @@ function ui.image(gpu,x,y,image)
   for py=1,(image.height or 0) do
     for px=1,(image.width or 0) do
       local cell=image.cells[(py-1)*image.width+px]
-      if cell then gpu.cell(x+px-1,y+py-1,cell.char or " ",cell.fg,cell.bg) end
+      if cell then
+        local fg,bg=cell.fg,cell.bg
+        if gpu.depth and gpu.depth<4 then
+          local color=tonumber(bg) or 0
+          local luminance=math.floor(color/0x10000)*3+math.floor(color/0x100)%0x100*6+color%0x100
+          bg=luminance>=1275 and 0xffffff or 0x202020
+          fg=bg
+        end
+        gpu.cell(x+px-1,y+py-1,cell.char or " ",fg,bg)
+      end
     end
   end
 end
