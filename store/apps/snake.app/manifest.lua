@@ -1,0 +1,1 @@
+return {id="snake",name="garden snake",version="1.0.0",author="idk os",entry="main.lua",icon="snake",color=0x55d98b,description="a responsive wrap-free arcade snake game",package="garden-snake-original",files={"manifest.lua","main.lua"}}

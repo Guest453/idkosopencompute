@@ -1,0 +1,1 @@
+return {id="chicken3d",name="chicken run 3d",version="1.0.0",author="idk os",entry="main.lua",icon="chicken3d",color=0x66a84f,description="an original low-poly 3d chicken-catching arena",package="chicken3d-original",files={"manifest.lua","main.lua"}}

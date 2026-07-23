@@ -1,0 +1,1 @@
+return {id="pong",name="neon pong",version="1.0.0",author="idk os",entry="main.lua",icon="pong",color=0x65c8ff,description="single-player neon pong with adaptive difficulty",package="neon-pong-original",files={"manifest.lua","main.lua"}}

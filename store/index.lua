@@ -48,12 +48,33 @@ return {
     files={"manifest.lua","main.lua"}
   },
   {
-    id="inferno", name="inferno: bfs1h demo", version="2.0.0", author="idk os / SuyaSS",
+    id="inferno", name="inferno: bfs1h demo", version="2.1.0", author="idk os / SuyaSS",
     category="games", icon="game", color=0xd05a3a,
     description="a two-minute transformed MAP01 raycaster demo",
     details="rasterizes SuyaSS's CC BY 4.0 BFS1H map geometry; no Doom IWAD assets.",
     path="store/apps/inferno.app",
     package="inferno-bfs1h-map01-demo",
     files={"manifest.lua","main.lua","BFS1H.wad","LICENSE-BFS1H.txt"}
+  },
+  {
+    id="chicken3d", name="chicken run 3d", version="1.0.0", author="idk os",
+    category="games", icon="chicken3d", color=0x66a84f,
+    description="catch wandering chickens in a genuine low-poly 3d arena",
+    details="perspective triangles, near-plane clipping, a depth buffer, adaptive resolution, and a timed eight-chicken challenge.",
+    path="store/apps/chicken3d.app", package="chicken3d-original", files={"manifest.lua","main.lua"}
+  },
+  {
+    id="snake", name="garden snake", version="1.0.0", author="idk os",
+    category="games", icon="snake", color=0x55d98b,
+    description="a responsive wrap-free arcade snake game",
+    details="grow through a compact garden with accelerating rounds, keyboard and directional touch steering.",
+    path="store/apps/snake.app", package="garden-snake-original", files={"manifest.lua","main.lua"}
+  },
+  {
+    id="pong", name="neon pong", version="1.0.0", author="idk os",
+    category="games", icon="pong", color=0x65c8ff,
+    description="adaptive single-player neon pong",
+    details="race the cpu to seven with angle-sensitive rebounds, keyboard controls, and direct touch positioning.",
+    path="store/apps/pong.app", package="neon-pong-original", files={"manifest.lua","main.lua"}
   }
 }

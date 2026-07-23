@@ -2,11 +2,12 @@ local ui = {}
 local unicode = require("unicode")
 
 -- a compact cell compositor. planes are flat to avoid thousands of row tables.
-function ui.renderer(gpu, width, height)
+function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
   local r = {width=width, height=height, fg=0xffffff, bg=0x000000}
   local chars, foregrounds, backgrounds, marks = {}, {}, {}, {}
   local oldChars, oldForegrounds, oldBackgrounds = {}, {}, {}
   local frame, gpuFg, gpuBg = 0, nil, nil
+  mirrors=mirrors or {}
   local clips = {{x1=1,y1=1,x2=width,y2=height}}
   local depthOk, depth = pcall(gpu.getDepth)
   r.depth=depthOk and depth or 1
@@ -99,9 +100,22 @@ function ui.renderer(gpu, width, height)
             text[#text+1]=ch
             x=x+1
           end
+          local run=table.concat(text)
           if gpuBg~=bg then gpu.setBackground(bg) gpuBg=bg end
           if gpuFg~=fg then gpu.setForeground(fg) gpuFg=fg end
-          gpu.set(start,y,table.concat(text))
+          gpu.set(start,y,run)
+          for mirrorIndex=#mirrors,1,-1 do
+            local mirror=mirrors[mirrorIndex]
+            local ok=pcall(function()
+              if mirror.bg~=bg then mirror.gpu.setBackground(bg) mirror.bg=bg end
+              if mirror.fg~=fg then mirror.gpu.setForeground(fg) mirror.fg=fg end
+              mirror.gpu.set(start,y,run)
+            end)
+            if not ok then
+              table.remove(mirrors,mirrorIndex)
+              if mirrorFailed then pcall(mirrorFailed,mirror) end
+            end
+          end
         end
       end
       local offset=(y-1)*width
@@ -118,6 +132,7 @@ function ui.renderer(gpu, width, height)
   function r.invalidate()
     oldChars,oldForegrounds,oldBackgrounds={},{},{}
     gpuFg,gpuBg=nil,nil
+    for _,mirror in ipairs(mirrors) do mirror.fg,mirror.bg=nil,nil end
   end
   return r
 end
@@ -160,6 +175,9 @@ local iconArt={
   diskusage={{0x377fa8,0x73c6df,0xf4c95d},{"..111..",".12221.","1222221","1333321",".11111."}},
   calendar={{0xd85b62,0xffffff,0x5794d0},{".11111.","1222221","1331331","1323331",".11111."}},
   components={{0x4c6f87,0x7dd8c3,0xf1c75b},{"..121..",".11211.","1212121",".11311.","..121.."}},
+  chicken3d={{0x66a84f,0xffffff,0xf2c84b,0xd94b45},{"..222..",".22223.",".222444",".3.3...","1111111"}},
+  snake={{0x173f35,0x55d98b,0xf4cf55},{"1111111","12222.1","1...2.1","1.322.1","1111111"}},
+  pong={{0x172b4d,0x65c8ff,0xffffff},{"1111111","12...21","12.3.21","12...21","1111111"}},
   sketch={{0x6b5fc7,0xffca5c,0x53c6a2},{".....11","...1121",".11221.","12221..","111...."}},
   game={{0x394a62,0x68d391,0xf36f76},{".11111.","1221221","1232221","1221321",".11111."}}
 }

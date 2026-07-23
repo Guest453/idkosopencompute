@@ -24,6 +24,61 @@ local oldBg, oldBgPalette = gpu.getBackground()
 local oldDepth = gpu.getDepth()
 local W, H
 local display
+local mirrors={}
+local maxMirrors=3
+
+local function clearMirrors()
+  for i=#mirrors,1,-1 do mirrors[i]=nil end
+end
+
+-- extra gpus can only drive independent screens; compatible pairs mirror the desktop.
+local function configureMirrors(width,height)
+  clearMirrors()
+  local primaryScreen=gpu.getScreen()
+  local primaryAddress=gpu.address
+  local occupied={[primaryScreen]=true}
+  local candidates={}
+  for address in component.list("gpu") do
+    if address~=primaryAddress then
+      local ok,proxy=pcall(component.proxy,address)
+      if ok and proxy then
+        local screenOk,screen=pcall(proxy.getScreen)
+        if screenOk and screen and screen~=primaryScreen then occupied[screen]=true candidates[#candidates+1]={address=address,gpu=proxy,screen=screen,bound=true}
+        elseif screenOk and not screen then candidates[#candidates+1]={address=address,gpu=proxy,bound=false} end
+      end
+    end
+  end
+  local unused={}
+  for address in component.list("screen") do if not occupied[address] then unused[#unused+1]=address end end
+  table.sort(unused)
+  table.sort(candidates,function(a,b) if a.bound~=b.bound then return a.bound end return a.address<b.address end)
+  local primaryDepthOk,primaryDepth=pcall(gpu.getDepth)
+  primaryDepth=primaryDepthOk and primaryDepth or 1
+  for _,candidate in ipairs(candidates) do
+    if #mirrors>=maxMirrors then break end
+    local maxOk,maxW,maxH=pcall(candidate.gpu.maxResolution)
+    local depthOk,maxDepth=pcall(candidate.gpu.maxDepth)
+    if maxOk and depthOk and maxW>=width and maxH>=height and maxDepth>=primaryDepth then
+      local screen=candidate.screen
+      if not screen and #unused>0 then
+        screen=table.remove(unused,1)
+        local bindOk,bound=pcall(candidate.gpu.bind,screen,false)
+        if not bindOk or bound==false then screen=nil end
+      end
+      if screen then
+        local configured=pcall(function()
+          local depthSet,depthReason=candidate.gpu.setDepth(primaryDepth)
+          if depthSet==false then error(depthReason or "depth rejected") end
+          local resolutionSet,resolutionReason=candidate.gpu.setResolution(width,height)
+          if resolutionSet==false then error(resolutionReason or "resolution rejected") end
+          local actualW,actualH=candidate.gpu.getResolution()
+          if actualW~=width or actualH~=height then error("resolution mismatch") end
+        end)
+        if configured then mirrors[#mirrors+1]={gpu=candidate.gpu,address=candidate.address,screen=screen} end
+      end
+    end
+  end
+end
 
 local function dockHeight() return H and H>=16 and 3 or 1 end
 local function workspaceBottom() return math.max(2,H-dockHeight()) end
@@ -94,8 +149,35 @@ function Window:button(id,x,y,w,label)
   self.dirty = true
 end
 function Window:reset()
-  self.draws, self.buttons = {}, {}
+  self.draws, self.buttons, self.canvasCells = {}, {}, 0
   self.dirty = true
+end
+function Window:size()
+  return self.width,math.max(0,self.height-1)
+end
+-- submit one bounded, flat cell frame. input planes are copied across the app boundary.
+function Window:canvas(x,y,width,height,cells)
+  x,y=math.floor(tonumber(x) or 1),math.floor(tonumber(y) or 1)
+  width,height=math.floor(tonumber(width) or 0),math.floor(tonumber(height) or 0)
+  if type(cells)~="table" or type(cells.backgrounds)~="table" then return nil,"invalid canvas" end
+  if x<1 or y<1 or x>self.width or y>=self.height then return nil,"canvas origin outside window" end
+  local maxWidth,maxHeight=math.max(0,self.width-x+1),math.max(0,self.height-y)
+  width,height=math.min(math.max(0,width),maxWidth),math.min(math.max(0,height),maxHeight)
+  local count=width*height
+  if count<1 or count>math.min(4096,self.width*math.max(0,self.height-1)) or self.canvasCells+count>4096 then return nil,"canvas exceeds window bounds" end
+  local backgrounds,foregrounds,glyphs={}, {}, {}
+  for i=1,count do
+    local bg=tonumber(cells.backgrounds[i])
+    backgrounds[i]=(bg and bg>=0 and bg<=0xffffff and bg%1==0) and bg or 0x000000
+    local fg=cells.foregrounds and tonumber(cells.foregrounds[i])
+    foregrounds[i]=(fg and fg>=0 and fg<=0xffffff and fg%1==0) and fg or nil
+    local glyph=cells.glyphs and cells.glyphs[i]
+    if glyph~=nil then glyphs[i]=unicode.sub(tostring(glyph),1,1) end
+  end
+  self.draws[#self.draws+1]={kind="canvas",x=x,y=y,w=width,h=height,backgrounds=backgrounds,foregrounds=foregrounds,glyphs=glyphs}
+  self.canvasCells=self.canvasCells+count
+  self.dirty=true
+  return true
 end
 function Window:close()
   core.closeTask(self.pid)
@@ -147,7 +229,11 @@ local function useResolution(width,height,setGpu)
     if setGpu then pcall(gpu.setResolution,W or oldW,H or oldH) end
     return nil,actualW
   end
-  local rendererOk,newDisplay=pcall(ui.renderer,gpu,actualW,actualH)
+  configureMirrors(actualW,actualH)
+  local rendererOk,newDisplay=pcall(ui.renderer,gpu,actualW,actualH,mirrors,function()
+    core.notification={text="a mirror display was disconnected",untilTime=computer.uptime()+4}
+    core.dirty=true
+  end)
   if not rendererOk then
     if setGpu then pcall(gpu.setResolution,W or oldW,H or oldH) end
     return nil,newDisplay
@@ -177,7 +263,7 @@ function core.createWindow(pid, options)
   local win = setmetatable({
     pid=pid, title=options.title or "app", x=options.x or (3+(count*3)%math.max(3,W-width-3)),
     y=options.y or (3+(count*2)%math.max(3,H-height-4)), width=width, height=height,
-    bg=options.bg or core.theme.window, draws={}, buttons={}, z=computer.uptime(), minimized=false, dirty=true
+    bg=options.bg or core.theme.window, draws={}, buttons={}, canvasCells=0, z=computer.uptime(), minimized=false, dirty=true
   }, Window)
   core.windows[pid] = win
   fitWindows()
@@ -212,6 +298,11 @@ local function appApi(task)
   function api.screen() return W,H end
   function api.focused() local win=core.windows[task.pid] return core.focused==task.pid and win and not win.minimized or false end
   function api.display(mode) return core.setDisplay(mode) end
+  function api.displays()
+    local result={primary={screen=gpu.getScreen(),width=W,height=H},mirrors={}}
+    for i,mirror in ipairs(mirrors) do result.mirrors[i]={gpu=mirror.address,screen=mirror.screen,width=W,height=H} end
+    return result
+  end
   function api.rescanApps() core.scanApps() core.dirty=true end
   api.fs, api.component, api.computer = filesystem, component, computer
   return api
@@ -410,6 +501,14 @@ local function drawWindow(win)
       ui.fill(display,dx,math.max(y+1,dy),math.min(d.w,w-d.x+1),math.min(d.h,y+h-math.max(y+1,dy)),d.bg or win.bg,d.char)
     elseif d.kind=="icon" and d.y>=1 and d.y<h then
       ui.image(display,dx,dy,ui.icon(d.name,d.color,d.size))
+    elseif d.kind=="canvas" then
+      for py=1,d.h do
+        local offset=(py-1)*d.w
+        for px=1,d.w do
+          local i=offset+px
+          display.cell(dx+px-1,dy+py-1,d.glyphs[i] or " ",d.foregrounds[i] or (d.glyphs[i] and 0xffffff) or d.backgrounds[i],d.backgrounds[i])
+        end
+      end
     end
   end
   for _, b in pairs(win.buttons) do
@@ -480,8 +579,14 @@ local function redraw()
   for _,win in pairs(core.windows) do win.dirty=false end
 end
 
+local function acceptedScreen(screen)
+  if screen==gpu.getScreen() then return true end
+  for _,mirror in ipairs(mirrors) do if mirror.screen==screen then return true end end
+  return false
+end
+
 local function handleTouch(_,screen,x,y,button,player)
-  if screen~=gpu.getScreen() then return end
+  if not acceptedScreen(screen) then return end
   if (y==1 and x>=9 and x<=15) or (core.appsButton and ui.inside(x,y,core.appsButton.x,core.appsButton.y,core.appsButton.w,core.appsButton.h)) then
     core.menu=not core.menu core.dirty=true return
   end
@@ -529,6 +634,7 @@ local function handleTouch(_,screen,x,y,button,player)
 end
 
 local function handleDrag(_,screen,x,y)
+  if not acceptedScreen(screen) then return end
   if core.dragging then
     local win=core.windows[core.dragging.pid]
     if win then win.x=ui.clip(x-core.dragging.dx,1,W-win.width+1) win.y=ui.clip(y-core.dragging.dy,2,workspaceBottom()-win.height+1) core.dirty=true end
@@ -560,8 +666,12 @@ function core.run()
     if ev[1] then
       if ev[1]=="touch" then handleTouch(table.unpack(ev))
       elseif ev[1]=="drag" then handleDrag(table.unpack(ev))
-      elseif ev[1]=="drop" then core.dragging=nil
+      elseif ev[1]=="drop" and acceptedScreen(ev[2]) then core.dragging=nil
       elseif ev[1]=="screen_resized" and ev[2]==gpu.getScreen() then useResolution(ev[3],ev[4],false)
+      elseif ev[1]=="screen_resized" and acceptedScreen(ev[2]) then useResolution(W,H,false)
+      elseif ev[1]=="component_added" or ev[1]=="component_removed" then
+        if ev[3]=="gpu" or ev[3]=="screen" then useResolution(W,H,false) end
+        dispatch(table.unpack(ev))
       elseif ev[1]=="key_down" and ev[4]==16 and keyboard.isControlDown() then core.running=false
       elseif (ev[1]=="key_down" or ev[1]=="key_up" or ev[1]=="clipboard") and core.focused then send(core.focused,table.unpack(ev))
       else dispatch(table.unpack(ev)) end

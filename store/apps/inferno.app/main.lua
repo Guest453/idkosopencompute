@@ -2,6 +2,11 @@ return function(app)
   local win=app.window{title="inferno: bfs1h map01 demo",width=78,height=25,bg=0x08090c}
   local clock=app.computer.uptime
   local pi=math.pi
+  local lastBeep=0
+  local function beep(frequency,duration,interval)
+    local now=clock()
+    if now-lastBeep>=(interval or .04) then pcall(app.computer.beep,frequency,duration or .03) lastBeep=now end
+  end
   local function atan2(y,x)
     if math.atan2 then return math.atan2(y,x) end
     if x>0 then return math.atan(y/x) end
@@ -226,13 +231,13 @@ return function(app)
     return count
   end
   local function expire(now)
-    if state=="playing" and now>=deadline then state,status,keys="timeout","two-minute demo complete",{} return true end
+    if state=="playing" and now>=deadline then state,status,keys="timeout","two-minute demo complete",{} beep(150,.14) return true end
     return false
   end
   local function shoot(now)
     if state~="playing" or expire(now) then return end
     if player.ammo<1 then status="empty - find ammo" return end
-    player.ammo=player.ammo-1 flash=now+.10
+    player.ammo=player.ammo-1 flash=now+.10 beep(260,.03)
     local best,bestDistance
     for _,enemy in ipairs(enemies) do
       if enemy.hp>0 then
@@ -242,7 +247,7 @@ return function(app)
         if math.abs(difference)<math.min(.20,.07+.22/distance) and lineClear(player.x,player.y,enemy.x,enemy.y) and (not bestDistance or distance<bestDistance) then best,bestDistance=enemy,distance end
       end
     end
-    if best then best.hp=best.hp-1 status=best.hp<=0 and "sentinel down" or "hit" else status="miss" end
+    if best then best.hp=best.hp-1 status=best.hp<=0 and "sentinel down" or "hit" beep(best.hp<=0 and 950 or 720,.05) else status="miss" end
   end
   local function shade(color,factor)
     factor=math.max(.18,math.min(1,factor))
@@ -343,14 +348,14 @@ return function(app)
     end
     for _,pickup in ipairs(pickups) do
       local dx,dy=pickup.x-player.x,pickup.y-player.y
-      if pickup.active and dx*dx+dy*dy<.36 then pickup.active=false if pickup.kind=="A" then player.ammo=player.ammo+8 status="ammo +8" else player.health=math.min(100,player.health+25) status="health +25" end end
+      if pickup.active and dx*dx+dy*dy<.36 then pickup.active=false if pickup.kind=="A" then player.ammo=player.ammo+8 status="ammo +8" beep(780,.04) else player.health=math.min(100,player.health+25) status="health +25" beep(1050,.05) end end
     end
     for _,enemy in ipairs(enemies) do
       if enemy.hp>0 then
         local dx,dy=player.x-enemy.x,player.y-enemy.y
         local distance=math.sqrt(dx*dx+dy*dy)
         if distance<.9 then
-          if now>=enemy.attack then enemy.attack=now+.85 player.health=player.health-9 status="sentinel strike" if player.health<=0 then state,status,keys="dead","signal lost",{} end end
+          if now>=enemy.attack then enemy.attack=now+.85 player.health=player.health-9 status="sentinel strike" beep(120,.06,.2) if player.health<=0 then state,status,keys="dead","signal lost",{} beep(90,.16) end end
         elseif distance<7 and lineClear(enemy.x,enemy.y,player.x,player.y) then
           local step=.48*dt
           local nx,ny=enemy.x+dx/distance*step,enemy.y+dy/distance*step
@@ -361,7 +366,7 @@ return function(app)
     end
     if state=="playing" then
       local dx,dy=exit.x-player.x,exit.y-player.y
-      if dx*dx+dy*dy<.45 then if living()==0 then state,status,keys="won","map exit reached",{} else status="exit locked: clear the targets" end end
+      if dx*dx+dy*dy<.45 then if living()==0 then state,status,keys="won","map exit reached",{} beep(1400,.14) else status="exit locked: clear the targets" beep(190,.04,.3) end end
     end
   end
   local keyMap={[17]="forward",[200]="forward",[31]="back",[208]="back",[30]="strafeL",[32]="strafeR",[203]="turnL",[205]="turnR",[16]="turnL",[18]="turnR"}
