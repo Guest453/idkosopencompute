@@ -304,9 +304,8 @@ local ramOk, ramReason = xpcall(function()
   if selected.address == currentRoot then status("warning: this is the former openos root disk.", 0xff9f0a) end
   if selected.address == bootAddress then status("warning: this is the current firmware boot disk.", 0xff9f0a) end
   status("after erasure starts there is no rollback.", 0xff6961)
-  local expected = "erase " .. selected.address
-  local confirmation = promptLine("type exactly: " .. expected)
-  if confirmation ~= expected then
+  local confirmation = promptLine("type exactly: erase")
+  if confirmation ~= "erase" then
     status("confirmation did not match; no disk was changed.", 0x67d5ff)
     powerOff(false)
   end
