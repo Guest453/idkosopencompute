@@ -11,7 +11,7 @@ wget -f https://raw.githubusercontent.com/Guest453/idkosopencompute/main/install
 ```
 
 the installer first downloads and validates the complete image in openos. it then
-visibly transitions to a mac-inspired, text-mode idk os installer running entirely
+visibly transitions to the idk os ram installer running entirely
 from ram. disks are discovered only after that transition, and the installer
 reboots automatically after the selected image is fully verified.
 
@@ -50,7 +50,9 @@ present in the image.
 
 ## desktop
 
-the macos-inspired text desktop has a top menu bar, centered task dock, familiar window controls, and a palette designed to remain readable at every gpu depth. it starts at the gpu's native maximum resolution when supported; compact, balanced, and native/max modes are available in settings, with safe fallback to the current resolution if a mode is rejected. rendering uses an in-memory frame diff so unchanged cells are not sent to the gpu. built-in apps include files, calculator, terminal shortcuts, settings, task manager, app store, and system information.
+the desktop is a lightweight cell gui with a top panel, graphical icon tiles, app-card launcher, layered windows and shadows, and a centered icon dock. wallpaper geometry can use `▀`/`▄` half-cell samples on unicode-capable color displays, providing twice the vertical color resolution for accents without pretending the gpu is pixel-addressable. low-depth displays safely fall back to solid cells and rectangles.
+
+the compositor keeps flat background, foreground, and character planes, clips window content, and groups adjacent changed cells with matching colors into gpu writes. unchanged cells are not resent. this keeps the gpu traffic and lua table overhead practical at native resolution. compact, balanced, and native/max modes remain available in settings, with safe fallback to the current resolution if a mode is rejected. built-in apps include files, calculator, terminal shortcuts, settings, task manager, app store, and system information.
 
 the app store catalog also offers lightweight downloadable apps. notes and todo use staged replacement writes for persistent data, while clock & timer and disk usage provide low-overhead utilities. downloadable catalog apps stay separate from the built-in installer payload.
 
@@ -62,9 +64,8 @@ apps are directories ending in `.app`:
 hello.app/
   manifest.lua
   main.lua
-  icon.lua       optional
 ```
 
-`manifest.lua` returns metadata and `main.lua` returns the app entry function. the extension is only a package marker; the actual code remains normal lua.
+`manifest.lua` returns metadata and `main.lua` returns the app entry function. manifests may optionally provide an icon pattern name in `icon` and a 24-bit numeric `color`; packages without either receive a deterministic built-in fallback icon. icons are small transparent-capable, colored cell images generated in memory, not imported image assets. the extension is only a package marker; the actual code remains normal lua.
 
 apps run as managed coroutines. they should call `app.pull`, `app.sleep`, or `app.yield` regularly so the desktop and task manager remain responsive.

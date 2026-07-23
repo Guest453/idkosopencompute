@@ -10,9 +10,10 @@ local core = {
   apps = {}, tasks = {}, windows = {}, nextPid = 100,
   running = true, focused = nil, dragging = nil, dirty = true,
   theme = {
-    desktop=0x315b78, panel=0xe8eaed, dock=0x252a31, window=0xf4f5f7,
-    title=0xd9dce1, accent=0x3478c9, text=0x20242a, muted=0x65707c,
-    lightText=0xf7f8fa, danger=0xe85d5d, warning=0xe5ae43, success=0x55a86c
+    desktop=0x173554, desktopAlt=0x214d70, panel=0xe9eef4, dock=0x172332,
+    window=0xf4f7fa, title=0xdce5ee, accent=0x4287d6, text=0x202b36,
+    muted=0x657483, lightText=0xf7f9fb, danger=0xe76568, warning=0xe7b34f,
+    success=0x56b47b, shadow=0x10263b, card=0x285878
   }
 }
 
@@ -23,6 +24,9 @@ local oldBg, oldBgPalette = gpu.getBackground()
 local oldDepth = gpu.getDepth()
 local W, H
 local display
+
+local function dockHeight() return H and H>=16 and 3 or 1 end
+local function workspaceBottom() return math.max(2,H-dockHeight()) end
 
 local function sortedWindows()
   local t = {}
@@ -56,6 +60,8 @@ function core.scanApps()
               manifest.path = path
               manifest.name = manifest.name or manifest.id
               manifest.entry = manifest.entry or "main.lua"
+              if type(manifest.icon)~="string" then manifest.icon=manifest.id end
+              if type(manifest.color)~="number" or manifest.color<0 or manifest.color>0xffffff then manifest.color=nil end
               core.apps[manifest.id] = manifest
             end
           end
@@ -94,12 +100,12 @@ end
 local function fitWindows()
   for _,win in pairs(core.windows) do
     if win.maximized then
-      win.x,win.y,win.width,win.height=1,2,W,math.max(1,H-2)
+      win.x,win.y,win.width,win.height=1,2,W,math.max(1,workspaceBottom()-1)
     else
       win.width=ui.clip(win.width,math.min(24,math.max(1,W-2)),math.max(1,W-2))
-      win.height=ui.clip(win.height,math.min(7,math.max(1,H-2)),math.max(1,H-2))
+      win.height=ui.clip(win.height,math.min(7,math.max(1,workspaceBottom()-1)),math.max(1,workspaceBottom()-1))
       win.x=ui.clip(win.x,1,math.max(1,W-win.width+1))
-      win.y=ui.clip(win.y,2,math.max(2,H-win.height))
+      win.y=ui.clip(win.y,2,math.max(2,workspaceBottom()-win.height+1))
     end
     win.dirty=true
   end
@@ -112,7 +118,7 @@ local function toggleMaximize(win)
     win.maximized,win.restoreGeometry=false,nil
   else
     win.restoreGeometry={win.x,win.y,win.width,win.height}
-    win.x,win.y,win.width,win.height=1,2,W,math.max(1,H-2)
+    win.x,win.y,win.width,win.height=1,2,W,math.max(1,workspaceBottom()-1)
     win.maximized=true
   end
   fitWindows()
@@ -162,7 +168,7 @@ end
 function core.createWindow(pid, options)
   options = options or {}
   local width = ui.clip(options.width or 50, math.min(24,math.max(1,W-2)), math.max(1,W-2))
-  local height = ui.clip(options.height or 16, math.min(7,math.max(1,H-2)), math.max(1,H-2))
+  local height = ui.clip(options.height or 16, math.min(7,math.max(1,workspaceBottom()-1)), math.max(1,workspaceBottom()-1))
   local count = 0 for _ in pairs(core.windows) do count = count + 1 end
   local win = setmetatable({
     pid=pid, title=options.title or "app", x=options.x or (3+(count*3)%math.max(3,W-width-3)),
@@ -170,6 +176,7 @@ function core.createWindow(pid, options)
     bg=options.bg or core.theme.window, draws={}, buttons={}, z=computer.uptime(), minimized=false, dirty=true
   }, Window)
   core.windows[pid] = win
+  fitWindows()
   core.focused = pid
   core.dirty = true
   return win
@@ -282,8 +289,18 @@ end
 
 local function drawDesktop()
   ui.fill(display,1,1,W,H,core.theme.desktop)
+  if H>=10 then
+    ui.fill(display,1,math.floor(H*.48),W,H-math.floor(H*.48)+1,core.theme.desktopAlt)
+    local base=core.theme.desktopAlt
+    for i=0,math.min(10,math.floor(W/8)) do
+      local ax=W-i*7
+      ui.semiRect(display,ax,math.max(4,H*2-12-i),math.min(7,W-ax+1),4,0x2b6183,base)
+    end
+    ui.semiRect(display,1,math.floor(H*.8),math.max(6,math.floor(W*.22)),5,0x286080,core.theme.desktop)
+  end
   ui.fill(display,1,1,W,1,core.theme.panel)
-  ui.text(display,2,1,"idk os",core.theme.text,core.theme.panel)
+  ui.fill(display,1,1,7,1,core.theme.accent)
+  ui.text(display,2,1,"idk os",core.theme.lightText,core.theme.accent)
   if W>=16 then ui.text(display,10,1,"apps",core.theme.text,core.theme.panel) end
   local focused=core.focused and core.tasks[core.focused]
   if focused and W>=34 then ui.text(display,17,1,unicode.sub(focused.name,1,16),core.theme.muted,core.theme.panel) end
@@ -292,35 +309,73 @@ local function drawDesktop()
     local status=string.format("mem %d%%",memory)
     ui.text(display,W-unicode.len(status)-1,1,status,core.theme.muted,core.theme.panel)
   end
+  core.desktopHits={}
+  if W>=42 and H>=18 then
+    local wanted={"files","store","terminal","settings"}
+    local tx=3
+    for _,id in ipairs(wanted) do
+      local manifest=core.apps[id]
+      if manifest and tx+8<=W then
+        ui.fill(display,tx,3,9,5,core.theme.card)
+        ui.image(display,tx+2,4,ui.icon(manifest.icon,manifest.color))
+        ui.center(display,tx,7,9,unicode.sub(manifest.name,1,9),core.theme.lightText,core.theme.card)
+        core.desktopHits[#core.desktopHits+1]={x=tx,y=3,w=9,h=5,id=id}
+        tx=tx+11
+      end
+    end
+  end
+end
+
+local function drawDock()
   local tasks={}
   for _,task in pairs(core.tasks) do tasks[#tasks+1]=task end
   table.sort(tasks,function(a,b) return a.pid<b.pid end)
-  local visible=math.min(#tasks,math.max(0,math.floor((W-10)/11)))
-  local dockWidth=8+visible*11
+  local dh=dockHeight()
+  local unit=dh==3 and 7 or 11
+  local visible=math.min(#tasks,math.max(0,math.floor((W-8)/unit)))
+  local dockWidth=7+visible*unit
   local dockX=math.max(1,math.floor((W-dockWidth)/2)+1)
-  ui.fill(display,dockX,H,dockWidth,1,core.theme.dock)
-  ui.button(display,dockX+1,H,6,"apps",core.menu,core.theme.accent,core.theme.dock)
-  core.appsButton={x=dockX+1,w=6}
-  local x=dockX+8
+  local dockY=H-dh+1
+  if dockX>1 then ui.fill(display,dockX-1,dockY-1,math.min(W-dockX+2,dockWidth+2),1,core.theme.shadow) end
+  ui.fill(display,dockX,dockY,dockWidth,dh,core.theme.dock)
+  core.appsButton={x=dockX,y=dockY,w=7,h=dh}
   core.taskButtons={}
+  if dh==1 then
+    ui.button(display,dockX,H,7,"apps",core.menu,core.theme.accent,core.theme.dock)
+  else
+    ui.image(display,dockX+1,dockY,ui.icon("store",core.menu and core.theme.accent or 0x6885a0))
+  end
+  local x=dockX+7
   for i=1,visible do
     local task=tasks[i]
-    local label=unicode.sub(task.name,1,9)
-    ui.button(display,x,H,10,label,core.focused==task.pid,core.theme.accent,core.theme.dock)
-    core.taskButtons[#core.taskButtons+1]={x=x,w=10,pid=task.pid}
-    x=x+11
+    local manifest=core.apps[task.id] or {}
+    if dh==1 then
+      ui.button(display,x,H,10,unicode.sub(task.name,1,9),core.focused==task.pid,core.theme.accent,core.theme.dock)
+      core.taskButtons[#core.taskButtons+1]={x=x,y=H,w=10,h=1,pid=task.pid}
+    else
+      local tile=core.focused==task.pid and core.theme.accent or core.theme.dock
+      ui.fill(display,x,dockY,7,3,tile)
+      ui.image(display,x+1,dockY,ui.icon(manifest.icon or task.id,manifest.color))
+      core.taskButtons[#core.taskButtons+1]={x=x,y=dockY,w=7,h=3,pid=task.pid}
+    end
+    x=x+unit
   end
 end
 
 local function drawWindow(win)
   if win.minimized then return end
   local x,y,w,h=win.x,win.y,win.width,win.height
+  if x+w<=W then ui.fill(display,x+w,y+1,1,math.min(h,H-y),core.theme.shadow) end
+  if y+h<=workspaceBottom() then ui.fill(display,x+1,y+h,math.min(w,W-x),1,core.theme.shadow) end
   ui.fill(display,x,y,w,h,win.bg)
   ui.fill(display,x,y,w,1,core.focused==win.pid and core.theme.title or 0xc9cdd3)
+  display.cell(x,y," ",core.theme.text,core.theme.window)
+  display.cell(x+w-1,y," ",core.theme.text,core.theme.window)
   ui.text(display,x+1,y,"x",core.theme.lightText,core.theme.danger)
   ui.text(display,x+3,y,"-",core.theme.text,core.theme.warning)
-  ui.text(display,x+5,y,"o",core.theme.lightText,core.theme.success)
+  ui.text(display,x+5,y,"+",core.theme.lightText,core.theme.success)
   if w>=10 then ui.center(display,x+7,y,w-7,unicode.sub(win.title,1,math.max(0,w-9)),core.theme.text,core.focused==win.pid and core.theme.title or 0xc9cdd3) end
+  display.pushClip(x,y+1,w,math.max(0,h-1))
   for _, d in ipairs(win.draws) do
     local dx,dy=x+d.x-1,y+d.y
     if d.kind=="text" and d.y>=1 and d.y<h then
@@ -332,22 +387,49 @@ local function drawWindow(win)
   for _, b in pairs(win.buttons) do
     if b.y>=1 and b.y<h and b.x<=w then ui.button(display,x+b.x-1,y+b.y,math.min(b.w,w-b.x+1),b.label,false) end
   end
+  display.popClip()
 end
 
 local function drawMenu()
   if not core.menu then return end
-  local mh=math.min(H-2, 2 + (function() local n=0 for _ in pairs(core.apps) do n=n+1 end return n end)())
-  local mw=math.min(30,W-2)
-  ui.fill(display,9,2,mw,mh,core.theme.panel)
-  core.menuBox={x=9,y=2,w=mw,h=mh}
-  ui.text(display,11,2,"applications",core.theme.text,core.theme.panel)
-  local y=4
   local apps={} for _,m in pairs(core.apps) do apps[#apps+1]=m end
   table.sort(apps,function(a,b)return a.name<b.name end)
-  core.menuRows={}
-  for _,m in ipairs(apps) do
-    if y<2+mh then ui.text(display,11,y,"- "..unicode.sub(m.name,1,math.max(1,mw-5)),core.theme.text,core.theme.panel) end
-    core.menuRows[y]=m.id y=y+1
+  core.menuHits={}
+  local launcherCols=math.max(1,math.min(4,math.floor((W-6)/17)))
+  local launcherRows=math.ceil(#apps/launcherCols)
+  local graphical=W>=40 and H>=15 and launcherRows*4+3<=workspaceBottom()
+  if graphical then
+    local cols,rows=launcherCols,math.max(1,launcherRows)
+    local mw=math.min(W-4,cols*17+3)
+    local mh=math.min(workspaceBottom()-2,rows*4+3)
+    local mx=math.floor((W-mw)/2)+1
+    ui.fill(display,mx+1,3,mw,mh,core.theme.shadow)
+    ui.fill(display,mx,2,mw,mh,core.theme.panel)
+    ui.text(display,mx+2,2,"applications",core.theme.text,core.theme.panel)
+    core.menuBox={x=mx,y=2,w=mw,h=mh}
+    for i=1,math.min(#apps,rows*cols) do
+      local m=apps[i]
+      local col=(i-1)%cols local row=math.floor((i-1)/cols)
+      local x=mx+2+col*17 local y=4+row*4
+      ui.fill(display,x,y,15,4,0xf8fafc)
+      ui.image(display,x+1,y,ui.icon(m.icon,m.color))
+      ui.text(display,x+7,y+1,unicode.sub(m.name,1,7),core.theme.text,0xf8fafc)
+      ui.text(display,x+7,y+2,"open",core.theme.accent,0xf8fafc)
+      core.menuHits[#core.menuHits+1]={x=x,y=y,w=15,h=4,id=m.id}
+    end
+  else
+    local mh=math.min(workspaceBottom()-1,2+#apps)
+    local mw=math.min(30,W-2)
+    ui.fill(display,2,2,mw,mh,core.theme.panel)
+    core.menuBox={x=2,y=2,w=mw,h=mh}
+    ui.text(display,4,2,"applications",core.theme.text,core.theme.panel)
+    for i,m in ipairs(apps) do
+      local y=2+i
+      if y<2+mh then
+        ui.text(display,4,y,unicode.sub(m.name,1,mw-4),core.theme.text,core.theme.panel)
+        core.menuHits[#core.menuHits+1]={x=2,y=y,w=mw,h=1,id=m.id}
+      end
+    end
   end
 end
 
@@ -356,11 +438,13 @@ local function redraw()
   drawDesktop()
   for _,win in ipairs(sortedWindows()) do drawWindow(win) end
   drawMenu()
+  drawDock()
   if core.notification and computer.uptime()<core.notification.untilTime then
-    local text=unicode.sub(core.notification.text,1,W-8)
+    local text=unicode.sub(core.notification.text,1,math.max(1,W-8))
     local length=unicode.len(text)
-    ui.fill(display,W-length-5,3,length+3,3,core.theme.dock)
-    ui.text(display,W-length-4,4,text,core.theme.lightText,core.theme.dock)
+    local nx=math.max(1,W-length-5)
+    ui.fill(display,nx,3,math.min(W,length+3),3,core.theme.dock)
+    ui.text(display,nx+1,4,text,core.theme.lightText,core.theme.dock)
   end
   display.flush()
   core.dirty=false
@@ -369,23 +453,26 @@ end
 
 local function handleTouch(_,screen,x,y,button,player)
   if screen~=gpu.getScreen() then return end
-  if (y==1 and x>=9 and x<=15) or (y==H and core.appsButton and x>=core.appsButton.x and x<core.appsButton.x+core.appsButton.w) then
+  if (y==1 and x>=9 and x<=15) or (core.appsButton and ui.inside(x,y,core.appsButton.x,core.appsButton.y,core.appsButton.w,core.appsButton.h)) then
     core.menu=not core.menu core.dirty=true return
   end
-  if y==H then
-    for _,item in ipairs(core.taskButtons or {}) do
-       if x>=item.x and x<item.x+item.w then
-        local win=core.windows[item.pid]
-        if win then win.minimized=false win.z=computer.uptime() end
-        core.focused=item.pid core.menu=false core.dirty=true
-        return
-      end
+  for _,item in ipairs(core.taskButtons or {}) do
+    if ui.inside(x,y,item.x,item.y,item.w,item.h) then
+      local win=core.windows[item.pid]
+      if win then win.minimized=false win.z=computer.uptime() end
+      core.focused=item.pid core.menu=false core.dirty=true
+      return
     end
   end
-  if core.menu and core.menuBox and ui.inside(x,y,core.menuBox.x,core.menuBox.y,core.menuBox.w,core.menuBox.h) and core.menuRows and core.menuRows[y] then
-    local pid,reason=core.launch(core.menuRows[y])
-    if not pid then core.notification={text=tostring(reason),untilTime=computer.uptime()+5} end
-    core.menu=false core.dirty=true return
+  if core.menu and core.menuBox and ui.inside(x,y,core.menuBox.x,core.menuBox.y,core.menuBox.w,core.menuBox.h) then
+    for _,item in ipairs(core.menuHits or {}) do
+      if ui.inside(x,y,item.x,item.y,item.w,item.h) then
+        local pid,reason=core.launch(item.id)
+        if not pid then core.notification={text=tostring(reason),untilTime=computer.uptime()+5} end
+        core.menu=false core.dirty=true return
+      end
+    end
+    return
   end
   local wins=sortedWindows()
   for i=#wins,1,-1 do
@@ -403,12 +490,19 @@ local function handleTouch(_,screen,x,y,button,player)
       return
     end
   end
+  for _,item in ipairs(core.desktopHits or {}) do
+    if ui.inside(x,y,item.x,item.y,item.w,item.h) then
+      local pid,reason=core.launch(item.id)
+      if not pid then core.notification={text=tostring(reason),untilTime=computer.uptime()+5} end
+      core.dirty=true return
+    end
+  end
 end
 
 local function handleDrag(_,screen,x,y)
   if core.dragging then
     local win=core.windows[core.dragging.pid]
-    if win then win.x=ui.clip(x-core.dragging.dx,1,W-win.width+1) win.y=ui.clip(y-core.dragging.dy,2,H-win.height) core.dirty=true end
+    if win then win.x=ui.clip(x-core.dragging.dx,1,W-win.width+1) win.y=ui.clip(y-core.dragging.dy,2,workspaceBottom()-win.height+1) core.dirty=true end
   end
 end
 
