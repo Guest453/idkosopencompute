@@ -1,7 +1,6 @@
 return function(app)
-  local shell=require("shell")
   local win=app.window{title="terminal",width=72,height=20,bg=0x101010}
-  local lines={"idk os terminal","use the openos terminal for interactive commands.","buttons below run safe quick commands."}
+  local lines={"idk os system console","standalone mode has no command shell.","buttons below provide built-in system actions."}
   while true do
     win:reset()
     for i=1,math.min(#lines,13) do win:text(2,i+1,lines[math.max(1,#lines-12)+i-1],0xdddddd,0x101010) end

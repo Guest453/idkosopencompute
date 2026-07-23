@@ -8,13 +8,21 @@ return function(app)
     win:button("dark",2,6,12,"midnight")
     win:button("blue",16,6,12,"blue")
     win:button("green",30,6,12,"green")
-    win:text(2,10,"idk os 1.0")
-    win:text(2,11,"press ctrl+q to exit the desktop")
+    win:text(2,8,"display size")
+    win:button("compact",2,9,12,"compact")
+    win:button("balanced",16,9,12,"balanced")
+    win:button("native",30,9,12,"native/max")
+    win:text(2,12,"idk os 1.1")
+    win:text(2,13,"press ctrl+q to exit the desktop")
     local name,_,id=app.pull()
     if name=="idk_button" then
       if id=="dark" then theme.desktop=0x111827
       elseif id=="blue" then theme.desktop=0x0f2942
-      elseif id=="green" then theme.desktop=0x123524 end
+      elseif id=="green" then theme.desktop=0x123524
+      elseif id=="compact" or id=="balanced" or id=="native" then
+        local ok,reason=app.display(id)
+        if not ok then app.notify(reason) end
+      end
     end
   end
 end
