@@ -16,11 +16,11 @@ function filesUnder(directory) {
 
 const luaFiles = filesUnder(root).filter(file => file.endsWith(".lua"));
 for (const file of luaFiles) {
-  luaparse.parse(fs.readFileSync(file, "utf8"), {luaVersion: "5.3", encodingMode: "x-user-defined"});
+  luaparse.parse(fs.readFileSync(file, "utf8"), {luaVersion: "5.2", encodingMode: "x-user-defined"});
 }
 
 const imagePath = path.join(root, "image.lua");
-const imageAst = luaparse.parse(fs.readFileSync(imagePath, "utf8"), {luaVersion: "5.3", encodingMode: "x-user-defined"});
+const imageAst = luaparse.parse(fs.readFileSync(imagePath, "utf8"), {luaVersion: "5.2", encodingMode: "x-user-defined"});
 if (imageAst.body.length !== 1 || imageAst.body[0].type !== "ReturnStatement") {
   throw new Error("image.lua must contain one return statement");
 }

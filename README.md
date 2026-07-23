@@ -44,7 +44,7 @@ the source-to-image mapping is declared in `image.lua`; `/init.lua` and every
 runtime, desktop, and built-in app dependency are explicit entries.
 
 maintainers can run `node tools/validate-image.js` with the `luaparse` module
-available. it parses every lua source as lua 5.3, checks duplicate and unsafe
+available. it parses every lua source as lua 5.2, checks duplicate and unsafe
 image paths, verifies required boot files, and ensures every `src` lua file is
 present in the image.
 

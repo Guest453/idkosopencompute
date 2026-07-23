@@ -18,14 +18,36 @@ local core = {
 }
 
 local gpu = component.gpu
-local oldW, oldH = gpu.getResolution()
-local oldFg, oldFgPalette = gpu.getForeground()
-local oldBg, oldBgPalette = gpu.getBackground()
-local oldDepth = gpu.getDepth()
+if not gpu then error("primary gpu is unavailable", 0) end
+local resolutionOk, oldW, oldH = pcall(gpu.getResolution)
+if not resolutionOk or type(oldW)~="number" or type(oldH)~="number" then
+  error("primary gpu resolution is unavailable: "..tostring(oldW), 0)
+end
+local foregroundOk, oldFg, oldFgPalette = pcall(gpu.getForeground)
+local backgroundOk, oldBg, oldBgPalette = pcall(gpu.getBackground)
+local depthOk, oldDepth = pcall(gpu.getDepth)
 local W, H
 local display
 local mirrors={}
 local maxMirrors=3
+
+local function componentAddresses(kind)
+  local found,seen={},{}
+  local listOk,iterator=pcall(component.list,kind)
+  if not listOk or type(iterator)~="function" then return found end
+  while true do
+    local nextOk,address=pcall(iterator)
+    if not nextOk or not address then break end
+    if type(address)=="string" and not seen[address] then found[#found+1],seen[address]=address,true end
+  end
+  table.sort(found)
+  return found
+end
+
+local function primaryScreen()
+  local ok,screen=pcall(gpu.getScreen)
+  return ok and screen or nil
+end
 
 local function clearMirrors()
   for i=#mirrors,1,-1 do mirrors[i]=nil end
@@ -34,23 +56,24 @@ end
 -- extra gpus can only drive independent screens; compatible pairs mirror the desktop.
 local function configureMirrors(width,height)
   clearMirrors()
-  local primaryScreen=gpu.getScreen()
-  local primaryAddress=gpu.address
-  local occupied={[primaryScreen]=true}
+  local mainScreen=primaryScreen()
+  local addressOk,primaryAddress=pcall(function() return gpu.address end)
+  if not addressOk then primaryAddress=nil end
+  local occupied={}
+  if mainScreen then occupied[mainScreen]=true end
   local candidates={}
-  for address in component.list("gpu") do
+  for _,address in ipairs(componentAddresses("gpu")) do
     if address~=primaryAddress then
       local ok,proxy=pcall(component.proxy,address)
-      if ok and proxy then
+      if ok and proxy and proxy~=gpu then
         local screenOk,screen=pcall(proxy.getScreen)
-        if screenOk and screen and screen~=primaryScreen then occupied[screen]=true candidates[#candidates+1]={address=address,gpu=proxy,screen=screen,bound=true}
+        if screenOk and screen and screen~=mainScreen and not occupied[screen] then occupied[screen]=true candidates[#candidates+1]={address=address,gpu=proxy,screen=screen,bound=true}
         elseif screenOk and not screen then candidates[#candidates+1]={address=address,gpu=proxy,bound=false} end
       end
     end
   end
   local unused={}
-  for address in component.list("screen") do if not occupied[address] then unused[#unused+1]=address end end
-  table.sort(unused)
+  for _,address in ipairs(componentAddresses("screen")) do if not occupied[address] then unused[#unused+1]=address end end
   table.sort(candidates,function(a,b) if a.bound~=b.bound then return a.bound end return a.address<b.address end)
   local primaryDepthOk,primaryDepth=pcall(gpu.getDepth)
   primaryDepth=primaryDepthOk and primaryDepth or 1
@@ -58,7 +81,7 @@ local function configureMirrors(width,height)
     if #mirrors>=maxMirrors then break end
     local maxOk,maxW,maxH=pcall(candidate.gpu.maxResolution)
     local depthOk,maxDepth=pcall(candidate.gpu.maxDepth)
-    if maxOk and depthOk and maxW>=width and maxH>=height and maxDepth>=primaryDepth then
+    if maxOk and depthOk and type(maxW)=="number" and type(maxH)=="number" and type(maxDepth)=="number" and maxW>=width and maxH>=height and maxDepth>=primaryDepth then
       local screen=candidate.screen
       if not screen and #unused>0 then
         screen=table.remove(unused,1)
@@ -92,9 +115,9 @@ end
 
 function core.restore()
   pcall(gpu.setResolution, oldW, oldH)
-  pcall(gpu.setDepth, oldDepth)
-  pcall(gpu.setForeground, oldFg, oldFgPalette)
-  pcall(gpu.setBackground, oldBg, oldBgPalette)
+  if depthOk then pcall(gpu.setDepth, oldDepth) end
+  if foregroundOk then pcall(gpu.setForeground, oldFg, oldFgPalette) end
+  if backgroundOk then pcall(gpu.setBackground, oldBg, oldBgPalette) end
   pcall(gpu.fill, 1,1,oldW,oldH," ")
 end
 
@@ -213,23 +236,29 @@ end
 
 local function useResolution(width,height,setGpu)
   local limitsOk,maxW,maxH=pcall(gpu.maxResolution)
-  if not limitsOk then return nil,maxW end
+  if not limitsOk or type(maxW)~="number" or type(maxH)~="number" then return nil,maxW end
   width=tonumber(width)
   height=tonumber(height)
   if not width or not height then return nil,"invalid resolution" end
   width=ui.clip(math.floor(width),1,maxW)
   height=ui.clip(math.floor(height),1,maxH)
-  if setGpu and (width~=W or height~=H) then
-    local called,changed,reason=pcall(gpu.setResolution,width,height)
-    if not called then return nil,changed end
-    if not changed then return nil,reason or "resolution rejected by gpu" end
+  if setGpu then
+    local currentOk,currentW,currentH=pcall(gpu.getResolution)
+    if not currentOk then return nil,currentW end
+    if width~=currentW or height~=currentH then
+      local called,changed,reason=pcall(gpu.setResolution,width,height)
+      if not called then return nil,changed end
+      if not changed then return nil,reason or "resolution rejected by gpu" end
+    end
   end
   local resolutionOk,actualW,actualH=pcall(gpu.getResolution)
   if not resolutionOk then
     if setGpu then pcall(gpu.setResolution,W or oldW,H or oldH) end
     return nil,actualW
   end
-  configureMirrors(actualW,actualH)
+  -- mirrors are optional: discovery and configuration cannot reject the primary.
+  local mirrorsOk=pcall(configureMirrors,actualW,actualH)
+  if not mirrorsOk then clearMirrors() end
   local rendererOk,newDisplay=pcall(ui.renderer,gpu,actualW,actualH,mirrors,function()
     core.notification={text="a mirror display was disconnected",untilTime=computer.uptime()+4}
     core.dirty=true
@@ -247,9 +276,18 @@ end
 
 function core.setDisplay(mode)
   local ok,maxW,maxH=pcall(gpu.maxResolution)
-  if not ok then return nil,maxW end
+  if not ok or type(maxW)~="number" or type(maxH)~="number" then return nil,maxW end
   local limits={compact={60,20},balanced={80,25}}
-  if mode=="native" or mode=="maximum" then return useResolution(maxW,maxH,true) end
+  if mode=="native" or mode=="maximum" then
+    local freeOk,freeMemory=pcall(computer.freeMemory)
+    local totalOk,totalMemory=pcall(computer.totalMemory)
+    local safe,required=ui.memorySafe(maxW,maxH,freeOk and freeMemory,totalOk and totalMemory)
+    if not safe then
+      local available=tonumber(freeOk and freeMemory) or 0
+      return nil,"native resolution is unsafe: "..tostring(math.floor(available)).." bytes free; "..tostring(required or "unknown").." required"
+    end
+    return useResolution(maxW,maxH,true)
+  end
   local size=limits[mode]
   if not size then return nil,"unknown display mode" end
   return useResolution(math.min(maxW,size[1]),math.min(maxH,size[2]),true)
@@ -299,7 +337,7 @@ local function appApi(task)
   function api.focused() local win=core.windows[task.pid] return core.focused==task.pid and win and not win.minimized or false end
   function api.display(mode) return core.setDisplay(mode) end
   function api.displays()
-    local result={primary={screen=gpu.getScreen(),width=W,height=H},mirrors={}}
+    local result={primary={screen=primaryScreen(),width=W,height=H},mirrors={}}
     for i,mirror in ipairs(mirrors) do result.mirrors[i]={gpu=mirror.address,screen=mirror.screen,width=W,height=H} end
     return result
   end
@@ -580,7 +618,8 @@ local function redraw()
 end
 
 local function acceptedScreen(screen)
-  if screen==gpu.getScreen() then return true end
+  if not screen then return false end
+  if screen==primaryScreen() then return true end
   for _,mirror in ipairs(mirrors) do if mirror.screen==screen then return true end end
   return false
 end
@@ -643,9 +682,14 @@ end
 
 function core.run()
   local depthOk,maxDepth=pcall(gpu.maxDepth)
-  if depthOk then pcall(gpu.setDepth,math.min(maxDepth,8)) end
-  local resized,resizeError=core.setDisplay("native")
-  if not resized then resized,resizeError=core.setDisplay("balanced") end
+  if depthOk and type(maxDepth)=="number" then pcall(gpu.setDepth,math.min(maxDepth,8)) end
+  local limitsOk,maxW,maxH=pcall(gpu.maxResolution)
+  if not limitsOk or type(maxW)~="number" or type(maxH)~="number" then error("primary gpu limits are unavailable: "..tostring(maxW)) end
+  local freeOk,freeMemory=pcall(computer.freeMemory)
+  local totalOk,totalMemory=pcall(computer.totalMemory)
+  local startupMode=ui.startupDisplayMode(maxW,maxH,freeOk and freeMemory,totalOk and totalMemory)
+  local resized,resizeError=core.setDisplay(startupMode)
+  if not resized and startupMode~="balanced" then resized,resizeError=core.setDisplay("balanced") end
   if not resized then resized,resizeError=core.setDisplay("compact") end
   if not resized then
     local currentOk,currentW,currentH=pcall(gpu.getResolution)
@@ -667,10 +711,25 @@ function core.run()
       if ev[1]=="touch" then handleTouch(table.unpack(ev))
       elseif ev[1]=="drag" then handleDrag(table.unpack(ev))
       elseif ev[1]=="drop" and acceptedScreen(ev[2]) then core.dragging=nil
-      elseif ev[1]=="screen_resized" and ev[2]==gpu.getScreen() then useResolution(ev[3],ev[4],false)
-      elseif ev[1]=="screen_resized" and acceptedScreen(ev[2]) then useResolution(W,H,false)
+      elseif ev[1]=="screen_resized" and ev[2]==primaryScreen() then
+        if ev[3]~=W or ev[4]~=H then
+          local resizeFreeOk,resizeFree=pcall(computer.freeMemory)
+          local resizeTotalOk,resizeTotal=pcall(computer.totalMemory)
+          local memoryOk=ui.memorySafe(ev[3],ev[4],resizeFreeOk and resizeFree,resizeTotalOk and resizeTotal)
+          if memoryOk then useResolution(ev[3],ev[4],false)
+          else
+            local reduced=core.setDisplay("balanced")
+            if not reduced then core.setDisplay("compact") end
+          end
+        end
+      elseif ev[1]=="screen_resized" and acceptedScreen(ev[2]) then
+        -- mirror resize events are consequences of configuration; do not rebuild.
       elseif ev[1]=="component_added" or ev[1]=="component_removed" then
-        if ev[3]=="gpu" or ev[3]=="screen" then useResolution(W,H,false) end
+        if ev[3]=="gpu" or ev[3]=="screen" then
+          local configured=pcall(configureMirrors,W,H)
+          if not configured then clearMirrors() end
+          if display then display.invalidate() core.dirty=true end
+        end
         dispatch(table.unpack(ev))
       elseif ev[1]=="key_down" and ev[4]==16 and keyboard.isControlDown() then core.running=false
       elseif (ev[1]=="key_down" or ev[1]=="key_up" or ev[1]=="clipboard") and core.focused then send(core.focused,table.unpack(ev))

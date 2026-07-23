@@ -1,12 +1,36 @@
 local ui = {}
 local unicode = require("unicode")
 
+function ui.framebufferMemory(width,height)
+  width,height=tonumber(width),tonumber(height)
+  if not width or not height or width<1 or height<1 then return math.huge end
+  -- six flat planes plus conservative lua table growth and renderer state.
+  return math.floor(width)*math.floor(height)*112+65536
+end
+
+function ui.memorySafe(width,height,freeMemory,totalMemory)
+  freeMemory,totalMemory=tonumber(freeMemory),tonumber(totalMemory)
+  if not freeMemory or not totalMemory or freeMemory<0 or totalMemory<1 then return false end
+  local headroom=math.max(384*1024,math.floor(totalMemory*.25))
+  local required=ui.framebufferMemory(width,height)+headroom
+  return freeMemory>=required,required
+end
+
+function ui.startupDisplayMode(maxWidth,maxHeight,freeMemory,totalMemory)
+  maxWidth,maxHeight=tonumber(maxWidth),tonumber(maxHeight)
+  if not maxWidth or not maxHeight then return "compact" end
+  if ui.memorySafe(maxWidth,maxHeight,freeMemory,totalMemory) then return "native" end
+  local balancedW,balancedH=math.min(maxWidth,80),math.min(maxHeight,25)
+  if ui.memorySafe(balancedW,balancedH,freeMemory,totalMemory) then return "balanced" end
+  return "compact"
+end
+
 -- a compact cell compositor. planes are flat to avoid thousands of row tables.
 function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
   local r = {width=width, height=height, fg=0xffffff, bg=0x000000}
-  local chars, foregrounds, backgrounds, marks = {}, {}, {}, {}
+  local chars, foregrounds, backgrounds = {}, {}, {}
   local oldChars, oldForegrounds, oldBackgrounds = {}, {}, {}
-  local frame, gpuFg, gpuBg = 0, nil, nil
+  local gpuFg, gpuBg = nil, nil
   mirrors=mirrors or {}
   local clips = {{x1=1,y1=1,x2=width,y2=height}}
   local depthOk, depth = pcall(gpu.getDepth)
@@ -24,12 +48,12 @@ function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
   local function put(x,y,char,fg,bg)
     if not visible(x,y) then return end
     local i=index(x,y)
-    chars[i],foregrounds[i],backgrounds[i],marks[i]=char,fg,bg,frame
+    chars[i],foregrounds[i],backgrounds[i]=char,fg,bg
   end
 
   function r.beginFrame()
-    frame=frame+1
     clips={{x1=1,y1=1,x2=width,y2=height}}
+    for i=1,width*height do chars[i],foregrounds[i],backgrounds[i]=nil,nil,nil end
   end
   function r.setForeground(color) r.fg=color end
   function r.setBackground(color) r.bg=color end
@@ -53,7 +77,7 @@ function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
       local offset=(py-1)*width
       for px=x1,x2 do
         local i=offset+px
-        chars[i],foregrounds[i],backgrounds[i],marks[i]=char,r.fg,r.bg,frame
+        chars[i],foregrounds[i],backgrounds[i]=char,r.fg,r.bg
       end
     end
   end
@@ -81,7 +105,7 @@ function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
       local x=1
       while x<=width do
         local i=index(x,y)
-        local drawn=marks[i]==frame
+        local drawn=chars[i]~=nil
         local ch=drawn and chars[i] or " "
         local fg=drawn and foregrounds[i] or r.fg
         local bg=drawn and backgrounds[i] or r.bg
@@ -92,7 +116,7 @@ function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
           x=x+1
           while x<=width do
             i=index(x,y)
-            drawn=marks[i]==frame
+            drawn=chars[i]~=nil
             ch=drawn and chars[i] or " "
             local nextFg=drawn and foregrounds[i] or r.fg
             local nextBg=drawn and backgrounds[i] or r.bg
@@ -121,7 +145,7 @@ function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
       local offset=(y-1)*width
       for px=1,width do
         local i=offset+px
-        local drawn=marks[i]==frame
+        local drawn=chars[i]~=nil
         oldChars[i]=drawn and chars[i] or " "
         oldForegrounds[i]=drawn and foregrounds[i] or r.fg
         oldBackgrounds[i]=drawn and backgrounds[i] or r.bg

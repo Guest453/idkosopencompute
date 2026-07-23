@@ -3,30 +3,48 @@ local rawComponent, rawComputer, rawUnicode = component, computer, unicode
 local boot, gpu, cursorY, screenWidth, screenHeight
 
 local function primary(kind)
-  local address = rawComponent.list(kind, true)()
-  return address and rawComponent.proxy(address) or nil
+  local listed, iterator = pcall(rawComponent.list, kind, true)
+  if not listed or type(iterator) ~= "function" then return nil end
+  local addressOk, address = pcall(iterator)
+  if not addressOk or not address then return nil end
+  local proxyOk, proxy = pcall(rawComponent.proxy, address)
+  if proxyOk and proxy then return proxy,address end
+  return nil
 end
 
 local function setupConsole()
   gpu = primary("gpu")
-  local screen = rawComponent.list("screen", true)()
   if not gpu then return end
-  if screen and not gpu.getScreen() then pcall(gpu.bind, screen) end
+  local _, screen = primary("screen")
+  local boundOk, bound = pcall(gpu.getScreen)
+  if screen and (not boundOk or not bound) then pcall(gpu.bind, screen) end
   local ok, width, height = pcall(gpu.getResolution)
-  if not ok then return end
+  if not ok or type(width) ~= "number" or type(height) ~= "number" then gpu = nil return end
   screenWidth, screenHeight, cursorY = width, height, 1
 end
 
 local function consoleWrite(value)
   if not gpu then return true end
   value = tostring(value)
-  for line, newline in value:gmatch("([^\n]*)(\n?)") do
-    if line ~= "" then
+  local function writeLine(line)
+    if line == "" then cursorY = cursorY + 1 return end
+    local offset = 1
+    while offset <= #line do
       if cursorY > screenHeight then pcall(gpu.copy, 1, 2, screenWidth, screenHeight - 1, 0, -1); cursorY = screenHeight end
       pcall(gpu.fill, 1, cursorY, screenWidth, 1, " ")
-      pcall(gpu.set, 1, cursorY, line:sub(1, screenWidth))
+      pcall(gpu.set, 1, cursorY, line:sub(offset, offset + screenWidth - 1))
+      offset, cursorY = offset + screenWidth, cursorY + 1
     end
-    if newline == "\n" then cursorY = cursorY + 1 end
+  end
+  local start = 1
+  while true do
+    local newline = value:find("\n", start, true)
+    if not newline then
+      if start <= #value then writeLine(value:sub(start)) end
+      break
+    end
+    writeLine(value:sub(start, newline - 1))
+    start = newline + 1
   end
   return true
 end
@@ -162,7 +180,7 @@ local componentApi = {
   type = rawComponent.type, methods = rawComponent.methods, doc = rawComponent.doc,
   fields = rawComponent.fields, slot = rawComponent.slot
 }
-function componentApi.isAvailable(kind) return rawComponent.list(kind, true)() ~= nil end
+function componentApi.isAvailable(kind) return primary(kind) ~= nil end
 setmetatable(componentApi, {__index = function(tableValue, kind)
   local value = primary(kind)
   rawset(tableValue, kind, value)
@@ -234,13 +252,32 @@ function runtime.install(bootProxy)
 end
 
 function runtime.fatal(message)
+  message = tostring(message)
+  if boot then
+    pcall(function()
+      local handle = boot.open("/idkos/crash.log", "w")
+      if handle then
+        boot.write(handle, message:sub(1, 16384))
+        boot.close(handle)
+      end
+    end)
+  end
   setupConsole()
   if gpu then
     pcall(gpu.setBackground, 0x000000); pcall(gpu.setForeground, 0xffffff)
     pcall(gpu.fill, 1, 1, screenWidth, screenHeight, " "); cursorY = 1
   end
-  consoleWrite(tostring(message) .. "\n")
-  rawComputer.shutdown(false)
+  consoleWrite(message .. "\n\npress a key or touch to reboot; press h to halt.\n")
+  local reboot = true
+  while true do
+    local signal = table.pack(rawComputer.pullSignal())
+    if signal[1] == "touch" then break end
+    if signal[1] == "key_down" then
+      reboot = signal[3] ~= string.byte("h") and signal[3] ~= string.byte("H")
+      break
+    end
+  end
+  rawComputer.shutdown(reboot)
 end
 
 return runtime
