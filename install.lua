@@ -224,8 +224,7 @@ local function promptLine(prompt)
 end
 
 local function rawValue(proxy, method, fallback)
-  if type(proxy[method]) ~= "function" then return fallback end
-  local ok, result = pcall(proxy[method])
+  local ok, result = pcall(function() return proxy[method]() end)
   if not ok then return fallback end
   return result
 end
@@ -256,7 +255,7 @@ local ramOk, ramReason = xpcall(function()
         label = rawValue(proxy, "getLabel", "") or "",
         total = rawValue(proxy, "spaceTotal", 0) or 0,
         used = rawValue(proxy, "spaceUsed", 0) or 0,
-        readOnly = readOnlyValue ~= false
+        readOnly = readOnlyValue == true
       }
     end
   end
@@ -367,7 +366,7 @@ local ramOk, ramReason = xpcall(function()
   end
 
   clearContent()
-  if target.isReadOnly() ~= false then fail("target became read-only before erasure") end
+  if rawValue(target, "isReadOnly", nil) == true then fail("target became read-only before erasure") end
   status("erasing " .. selected.address .. " ...", 0xff9f0a)
   wiped = true
   wipeDirectory("/")
