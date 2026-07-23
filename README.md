@@ -10,7 +10,10 @@ wget -f https://raw.githubusercontent.com/Guest453/idkosopencompute/main/install
 /tmp/idkos-install.lua
 ```
 
-the installer reboots automatically after the selected image is fully verified.
+the installer first downloads and validates the complete image in openos. it then
+visibly transitions to a mac-inspired, text-mode idk os installer running entirely
+from ram. disks are discovered only after that transition, and the installer
+reboots automatically after the selected image is fully verified.
 
 **destructive warning:** the installer asks you to select a raw filesystem
 component, then permanently erases every file on it. this can be the filesystem
@@ -19,12 +22,16 @@ erasure begins. the final prompt requires `erase <full-target-address>` exactly;
 there is no default disk. the volatile temporary filesystem is identified and
 cannot be selected because it cannot boot after a restart.
 
-before that final prompt, the installer downloads the complete image into ram,
-syntax-checks every lua payload, validates the image manifest, checks target
-capacity and read-only state, and makes no target changes. after confirmation it
-uses only the ram-held raw filesystem proxy: it recursively wipes that component,
-writes and reads back every image file, sets the label, sets the firmware boot
-address, and reboots. no network or openos file is needed after erasure starts.
+before entering the ram ui, the installer downloads the complete image into ram,
+syntax-checks every lua payload, and validates the image manifest. from the ram
+transition onward, raw gpu and keyboard signals provide the interface and disk
+selection has no default. disk discovery, current root/boot and temporary-disk
+labels, writable and capacity checks, full-address confirmation, erasure, writing,
+read-back verification, firmware boot-address update, and reboot use only captured
+ram data plus raw component, computer, and selected filesystem APIs. openos `io`,
+paths, packages, internet, and shell services are never used in this phase. no
+target change occurs until every payload is resident in ram and the exact
+`erase <full-target-address>` confirmation succeeds.
 
 the installed disk boots directly through its root `/init.lua`. that bootstrap
 loads `/idkos/system/runtime.lua`, which supplies the filesystem, io, event,
