@@ -1,1 +1,1 @@
-return {id="files",name="files",version="1.1.0",author="idk os",entry="main.lua",icon="files",color=0x4f8fe8,description="browse and preview files or launch lua scripts"}
+return {id="files",name="finder",version="2.0.0",author="idk os",entry="main.lua",icon="finder",color=0x4d9de0,description="finder-style file browser with favorites, previews, history, and safer actions"}
