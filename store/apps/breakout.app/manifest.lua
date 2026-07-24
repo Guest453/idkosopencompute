@@ -1,0 +1,1 @@
+return {id="breakout",name="prism breakout",version="1.0.0",author="idk os",entry="main.lua",icon="breakout",color=0x55c8ff,description="an adaptive three-wave brick-breaking game",package="prism-breakout-original",files={"manifest.lua","main.lua"}}

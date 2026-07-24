@@ -1,5 +1,5 @@
 return function(app)
-  local win=app.window{title="inferno: bfs1h map01 demo",width=78,height=25,bg=0x08090c}
+  local win=app.window{title="inferno: transformed wad geometry",width=78,height=25,bg=0x08090c}
   local clock=app.computer.uptime
   local pi=math.pi
   local lastBeep=0
@@ -323,7 +323,7 @@ return function(app)
     local remaining=math.max(0,math.ceil(deadline-now))
     win:text(2,1,string.format("health %3d  ammo %2d  targets %d  time %03d",math.max(0,player.health),player.ammo,living(),remaining),state=="playing" and 0xf2f2f2 or 0xf0bd55,0x08090c)
     win:text(2,height-4,state=="playing" and status or (state=="won" and "map exit reached - restart" or state=="timeout" and "two-minute demo complete - restart" or "signal lost - restart"),0xf0bd55,0x08090c)
-    win:text(2,height-5,"transformed bfs1h map01 demo - not doom",0x9ba4b3,0x08090c)
+    win:text(2,height-5,"transformed wad geometry + custom raycaster; not doom/full wad semantics",0x9ba4b3,0x08090c)
     local controls={{"forward","^"},{"back","v"},{"strafeL","<s"},{"strafeR","s>"},{"turnL","<<"},{"turnR",">>"},{"fire","fire"}}
     local buttonWidth=math.max(3,math.floor((width-8)/#controls))
     local x=2

@@ -48,10 +48,10 @@ return {
     files={"manifest.lua","main.lua"}
   },
   {
-    id="inferno", name="inferno: bfs1h demo", version="2.1.0", author="idk os / SuyaSS",
-    category="games", icon="game", color=0xd05a3a,
-    description="a two-minute transformed MAP01 raycaster demo",
-    details="rasterizes SuyaSS's CC BY 4.0 BFS1H map geometry; no Doom IWAD assets.",
+    id="inferno", name="inferno: transformed wad geometry", version="2.2.0", author="idk os / SuyaSS",
+    category="games", icon="inferno", color=0xd05a3a,
+    description="a transformed BFS1H MAP01 geometry demo",
+    details="parses and rasterizes map geometry for custom raycaster gameplay; not Doom or full WAD semantics.",
     path="store/apps/inferno.app",
     package="inferno-bfs1h-map01-demo",
     files={"manifest.lua","main.lua","BFS1H.wad","LICENSE-BFS1H.txt"}
@@ -76,5 +76,26 @@ return {
     description="adaptive single-player neon pong",
     details="race the cpu to seven with angle-sensitive rebounds, keyboard controls, and direct touch positioning.",
     path="store/apps/pong.app", package="neon-pong-original", files={"manifest.lua","main.lua"}
+  },
+  {
+    id="minesweeper", name="pocket mines", version="1.0.0", author="idk os",
+    category="games", icon="minesweeper", color=0x9aabc0,
+    description="a polished compact minesweeper board",
+    details="first-move-safe minesweeper with flood reveal, flags, scoring, keyboard, and direct touch controls.",
+    path="store/apps/minesweeper.app", package="pocket-mines-original", files={"manifest.lua","main.lua"}
+  },
+  {
+    id="breakout", name="prism breakout", version="1.0.0", author="idk os",
+    category="games", icon="breakout", color=0x55c8ff,
+    description="a bright adaptive brick-breaking game",
+    details="clear three waves with keyboard or touch paddle control, scoring, lives, and bounded physics.",
+    path="store/apps/breakout.app", package="prism-breakout-original", files={"manifest.lua","main.lua"}
+  },
+  {
+    id="spamtontrash", name="SPAMTON TRASH", version="1.0.0", author="idk os",
+    category="art", icon="spamtontrash", color=0xff4db8,
+    description="an original native-pixel puppet portrait",
+    details="displays a black-backed half-cell portrait with mismatched lenses, angular pose, and no gameplay.",
+    path="store/apps/spamtontrash.app", package="spamton-trash-native-art", files={"manifest.lua","main.lua"}
   }
 }

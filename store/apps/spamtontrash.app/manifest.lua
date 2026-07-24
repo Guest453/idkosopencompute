@@ -1,0 +1,1 @@
+return {id="spamtontrash",name="SPAMTON TRASH",version="1.0.0",author="idk os",entry="main.lua",icon="spamtontrash",color=0xff4db8,description="an original native half-cell puppet portrait",package="spamton-trash-native-art",files={"manifest.lua","main.lua"}}

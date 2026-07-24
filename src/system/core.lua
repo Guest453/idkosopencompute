@@ -468,11 +468,11 @@ local function drawDesktop()
     for _,id in ipairs(wanted) do
       local manifest=core.apps[id]
        if manifest and tx+10<=W then
-         ui.fill(display,tx+1,4,10,6,core.theme.shadow)
-         ui.fill(display,tx,3,10,6,core.theme.card)
+         ui.fill(display,tx+1,4,10,7,core.theme.shadow)
+         ui.fill(display,tx,3,10,7,core.theme.card)
          ui.image(display,tx+1,3,ui.icon(manifest.icon,manifest.color))
-         ui.center(display,tx,8,10,unicode.sub(manifest.name,1,10),core.theme.lightText,core.theme.card)
-         core.desktopHits[#core.desktopHits+1]={x=tx,y=3,w=10,h=6,id=id}
+         ui.center(display,tx,9,10,unicode.sub(manifest.name,1,10),core.theme.lightText,core.theme.card)
+         core.desktopHits[#core.desktopHits+1]={x=tx,y=3,w=10,h=7,id=id}
          tx=tx+12
       end
     end

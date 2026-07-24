@@ -1,0 +1,1 @@
+return {id="minesweeper",name="pocket mines",version="1.0.0",author="idk os",entry="main.lua",icon="minesweeper",color=0x9aabc0,description="first-move-safe minesweeper for keyboard and touch",package="pocket-mines-original",files={"manifest.lua","main.lua"}}
