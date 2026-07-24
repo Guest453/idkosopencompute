@@ -48,10 +48,10 @@ return {
     files={"manifest.lua","main.lua"}
   },
   {
-    id="recoveryupdater", name="recovery updater", version="1.0.0", author="idk os",
+    id="recoveryupdater", name="recovery updater", version="1.0.1", author="idk os",
     category="system", icon="recoveryupdater", color=0x397fca,
     description="reboot into a ram-resident full-system updater",
-    details="installs a one-shot boot bridge, stages every official image file, updates /init.lua last, and rolls back failed writes.",
+    details="uses component.invoke-compatible networking, stages every official image file, updates /init.lua last, and rolls back failed writes.",
     path="store/apps/recoveryupdater.app", package="idkos-recovery-updater",
     files={"manifest.lua","main.lua","bridge.lua","updater.lua"}
   },
