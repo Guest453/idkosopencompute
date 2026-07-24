@@ -1,0 +1,1 @@
+return {id="lightsout",name="lights out",version="1.0.0",author="idk os",entry="main.lua",icon="lightsout",color=0xffd84d,description="turn every light off in as few moves as possible",package="lights-out-original",files={"manifest.lua","main.lua"}}
