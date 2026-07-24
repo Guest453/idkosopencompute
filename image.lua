@@ -1,5 +1,5 @@
 return {
-  version = 1,
+  version = 2,
   files = {
     {source="src/init.lua", target="/init.lua"},
     {source="src/system/runtime.lua", target="/idkos/system/runtime.lua"},
@@ -7,6 +7,8 @@ return {
     {source="src/system/json.lua", target="/idkos/system/json.lua"},
     {source="src/system/core.lua", target="/idkos/system/core.lua"},
     {source="src/system/ui.lua", target="/idkos/system/ui.lua"},
+    {source="src/system/core_next.lua", target="/idkos/system/core_next.lua"},
+    {source="src/system/ui_next.lua", target="/idkos/system/ui_next.lua"},
     {source="src/apps/taskmanager.app/manifest.lua", target="/idkos/apps/taskmanager.app/manifest.lua"},
     {source="src/apps/taskmanager.app/main.lua", target="/idkos/apps/taskmanager.app/main.lua"},
     {source="src/apps/files.app/manifest.lua", target="/idkos/apps/files.app/manifest.lua"},
