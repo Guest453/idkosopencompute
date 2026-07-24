@@ -97,20 +97,7 @@ function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
 
   -- one character cell represents two vertical color samples when available.
   function r.semi(x,y,upper,lower)
-    if not visible(x,y) or (upper==nil and lower==nil) then return end
-    local requestedUpper,requestedLower=upper,lower
-    local i=index(x,y)
-    local oldChar,oldFg,oldBg=chars[i] or " ",foregrounds[i] or r.fg,backgrounds[i] or r.bg
-    local oldUpper,oldLower=oldBg,oldBg
-    if oldChar==upperHalf then oldUpper=oldFg elseif oldChar==lowerHalf then oldLower=oldFg end
-    upper,lower=upper or oldUpper,lower or oldLower
-    if r.semiPixels then
-      if upper==lower then put(x,y," ",upper,upper) else put(x,y,upperHalf,upper,lower) end
-    else
-      local color=requestedUpper or requestedLower or oldBg
-      local red,green,blue=math.floor(color/0x10000)%0x100,math.floor(color/0x100)%0x100,color%0x100
-      put(x,y," ",color,(red*3+green*6+blue)>=1275 and 0xffffff or 0x202020)
-    end
+    if r.semiPixels then put(x,y,upperHalf,upper,lower) else put(x,y," ",r.fg,upper or lower or r.bg) end
   end
 
   function r.flush()
@@ -196,31 +183,27 @@ function ui.button(gpu,x,y,w,label,active,activeBg,inactiveBg)
 end
 function ui.inside(px,py,x,y,w,h) return px>=x and py>=y and px<x+w and py<y+h end
 
--- native logical-pixel art: each palette-indexed row is eight pixels wide and
--- pairs with its neighbor through a half-block cell. dots preserve the surface.
+-- compact cell art: each seven-character row indexes a small per-image palette;
+-- dots are transparent. this retains shape and color without large pixel tables.
 local iconArt={
-  files={{0x73b9f5,0x2585d8,0xdaf1ff,0x173957},{".111111.","11122222","11122222","11122222","11122222","11122222","11122222","11122222","11142242","11122222","11144422","..1111.."}},
-  store={{0x35aa78,0x72ddb1,0xffffff,0x246e57},{"..3333..",".333333.",".344443.","11111111","12222221","12233221","12233221","12222221","12222221","12222221",".111111.","..1111.."}},
-  terminal={{0x172331,0x31445b,0x5ee0a4,0xeaf4ff},{".111111.","11111111","12222221","12322221","12232221","12223321","12224421","12222221","12222221","12222221","11111111",".111111."}},
-  settings={{0x60738a,0xaac1d4,0x45a8e8,0xf1f6fa},{"...11...",".1.11.1.","11211211",".123321.","11244211","12344321","12344321","11244211",".123321.","11211211",".1.11.1.","...11..."}},
-  calculator={{0x3979bd,0xd9efff,0x64d49b,0x173957},{".111111.","12222221","12444421","12222221","11111111","13313331","13313331","11111111","13313331","13313331","11111111",".111111."}},
-  systeminfo={{0x665bc5,0xbab4ff,0xffffff,0x363078},{"..1111..",".122221.","12222221","12233221","12233221","12222221",".123321.","...33...","...33...","..3333..",".133331.","11111111"}},
-  taskmanager={{0x26394d,0x50cbea,0xf16f7c,0xeaf6ff},{"11111111","12222221","12222221","12223221","12423221","12423221","12423221","12423221","12423241","12222221","12222221","11111111"}},
-  notes={{0xf1f4f7,0x568bd3,0xf2bd4d,0x8ba3ba},{".111111.","12212221","12212221","11111111","14444441","13333331","14444441","13333331","14444441","13333331","14444441",".111111."}},
-  timer={{0x7962be,0xc8baff,0xffffff,0x493b83},{"...11...","..1331..","...11...",".111111.","12222221","12233221","12333221","12343221","12222221","12222221",".111111.","..1111.."}},
-  todo={{0x31a46d,0xe9fff5,0x3579bd,0x174d39},{".111111.","12222221","12422221","14322221","12422221","12222221","12422221","14332221","12422221","12222421",".111431.","..1111.."}},
-  diskusage={{0x347da5,0x72c8df,0xf3ca55,0xffffff},{"...11...","..1221..",".122221.","12222221","12222221","12222221","12222221","13332221","13333441","13334441",".111111.","..1111.."}},
-  calendar={{0xd75961,0xffffff,0x5794d0,0x26384a},{"..1..1..",".141141.","11111111","12222221","13323321","12332321","13323321","12332321","13323321","12222221",".111111.","........"}},
-  components={{0x496b84,0x76d6c1,0xf1c552,0xeaf7ff},{"...11...",".1.11.1.","11211211","..1221..","11122111","12233221","12244221","11122111","..1221..","11211211",".1.11.1.","...11..."}},
-  inferno={{0x2a1718,0xd45a37,0xf4a43c,0xffe2a3},{".111111.","11222211","12233221","12333321","12344321","12244221","12222221","12211221","12211221","11222211",".122221.","..1111.."}},
-  chicken3d={{0x65a44e,0xffffff,0xf0c44a,0xd84b43},{"........","..2222..",".222222.",".2222233","..222333","...2444.","...233..","..2.2...","..3.3...",".33.33..","11111111","11111111"}},
-  snake={{0x163d33,0x55d98b,0xf3ce53,0xb6f4c9},{"11111111","12222221","12444221","11111221","13311221","13312221","11112221","12222221","12211111","12222221","11111111","........"}},
-  pong={{0x162a4b,0x65c8ff,0xffffff,0xff6fae},{"11111111","12111141","12111141","12133141","12133141","12111141","12111141","12111141","12133141","12133141","12111141","11111111"}},
-  minesweeper={{0x34495e,0x9aabc0,0xe95662,0xf2c94c},{"11111111","12212221","12121221","12212121","12122211","11231221","12133321","12234321","12333321","12232221","12222221","11111111"}},
-  breakout={{0x17284a,0x55c8ff,0xff6f91,0xf4cf58},{"11111111","13344331","13344331","14433441","14433441","11111111","11122111","11122111","11111111","12222221","12222221","11111111"}},
-  spamtontrash={{0x141414,0xf2f2f2,0xff4db8,0xffdf42,0xd93443},{"11111111","11222211","12222221","12322421","12211221","11255211","11522511","15225251","15555551","11211211","12211221","11111111"}},
-  sketch={{0x6b5fc7,0xffca5c,0x53c6a2},{".......1","......11",".....121","....1221","...1221.","..1221..",".1221...","1221....","221.....","11......","1.......","........"}},
-  game={{0x394a62,0x68d391,0xf36f76},{".111111.","11111111","12211221","12222221","12322321","12333321","12222221","12233221","12211221","11111111",".111111.","........"}}
+  files={{0xf5b942,0xffd66b,0x4c8bd9},{".111...","122222.","133332.","133332.",".11111."}},
+  store={{0x36b37e,0x7ee2b8,0xffffff},{"..333..",".31113.","1111111","1222221",".11111."}},
+  terminal={{0x202a38,0x4fd1a1,0xe8f0f7},{"1111111","1222221","1232221","1223321","1111111"}},
+  settings={{0x65758b,0xa9b8c9,0x49a4e8},{"1.111.1",".12321.","1123211",".12321.","1.111.1"}},
+  calculator={{0x3e78bd,0xdceaff,0x67d2a5},{"1111111","1222221","1111111","1331331","1111111"}},
+  systeminfo={{0x6b62c9,0xbab5ff,0xffffff},{"..111..",".12221.","..131..","..131..",".11111."}},
+  taskmanager={{0x29384a,0x52c7ea,0xf06f7d},{"1111111","1222231","1213231","1231211","1111111"}},
+  notes={{0xf2f4f7,0x5d8ed6,0xf0b84b},{".11111.",".12221.",".13331.",".12221.",".11111."}},
+  timer={{0x7d65c1,0xc9baff,0xffffff},{"..111..",".12221.","1233321",".12321.","..111.."}},
+  todo={{0x35a870,0xe7fff5,0x2d6ca8},{".11111.",".12221.",".13221.",".12231.",".11111."}},
+  diskusage={{0x377fa8,0x73c6df,0xf4c95d},{"..111..",".12221.","1222221","1333321",".11111."}},
+  calendar={{0xd85b62,0xffffff,0x5794d0},{".11111.","1222221","1331331","1323331",".11111."}},
+  components={{0x4c6f87,0x7dd8c3,0xf1c75b},{"..121..",".11211.","1212121",".11311.","..121.."}},
+  chicken3d={{0x66a84f,0xffffff,0xf2c84b,0xd94b45},{"..222..",".22223.",".222444",".3.3...","1111111"}},
+  snake={{0x173f35,0x55d98b,0xf4cf55},{"1111111","12222.1","1...2.1","1.322.1","1111111"}},
+  pong={{0x172b4d,0x65c8ff,0xffffff},{"1111111","12...21","12.3.21","12...21","1111111"}},
+  sketch={{0x6b5fc7,0xffca5c,0x53c6a2},{".....11","...1121",".11221.","12221..","111...."}},
+  game={{0x394a62,0x68d391,0xf36f76},{".11111.","1221221","1232221","1221321",".11111."}}
 }
 local iconColors={0x4f8fe8,0x40b887,0xa06ee1,0xe0874c,0xd95f70,0x3fa7b5}
 local iconCache,iconCacheSize={},0
@@ -228,10 +211,10 @@ local iconCache,iconCacheSize={},0
 local function fallbackArt(name,color)
   local hash=0 for i=1,#name do hash=(hash*33+name:byte(i))%65521 end
   local rows={}
-  for y=1,12 do
+  for y=1,5 do
     local row={}
-    for x=1,8 do
-      local edge=x==1 or x==8 or y==1 or y==12
+    for x=1,7 do
+      local edge=x==1 or x==7 or y==1 or y==5
       row[x]=edge and "1" or (((hash+17*x+31*y)%(4+x+y)<2) and "2" or ".")
     end
     rows[y]=table.concat(row)
@@ -249,15 +232,14 @@ function ui.icon(name,color,size)
   local palette={table.unpack(art[1])}
   if suppliedColor and suppliedColor>=0 and suppliedColor<=0xffffff then palette[1]=suppliedColor end
   local small=size=="small" or tonumber(size)==3
-  local image={width=small and 5 or 8,height=small and 3 or 6,cells={},logical=true}
-  local xs=small and {1,3,4,6,8} or {1,2,3,4,5,6,7,8}
+  local image={width=small and 5 or 7,height=small and 3 or 5,cells={}}
   for y=1,image.height do
-    local sy=small and (y-1)*4+1 or (y-1)*2+1
+    local sy=small and ({1,3,5})[y] or y
     for x=1,image.width do
-      local sx=xs[x]
-      local upper=tonumber(art[2][sy]:sub(sx,sx))
-      local lower=tonumber(art[2][sy+(small and 2 or 1)]:sub(sx,sx))
-      if upper or lower then image.cells[(y-1)*image.width+x]={upper=upper and palette[upper],lower=lower and palette[lower]} end
+      local sx=small and ({1,2,4,6,7})[x] or x
+      local key=art[2][sy]:sub(sx,sx)
+      local index=tonumber(key)
+      if index and palette[index] then image.cells[(y-1)*image.width+x]={char=" ",bg=palette[index],fg=palette[index]} end
     end
   end
   if #cacheKey<96 and iconCacheSize<128 then iconCache[cacheKey]=image iconCacheSize=iconCacheSize+1 end
@@ -270,8 +252,14 @@ function ui.image(gpu,x,y,image)
     for px=1,(image.width or 0) do
       local cell=image.cells[(py-1)*image.width+px]
       if cell then
-        if image.logical then gpu.semi(x+px-1,y+py-1,cell.upper,cell.lower)
-        else gpu.cell(x+px-1,y+py-1,cell.char or " ",cell.fg,cell.bg) end
+        local fg,bg=cell.fg,cell.bg
+        if gpu.depth and gpu.depth<4 then
+          local color=tonumber(bg) or 0
+          local luminance=math.floor(color/0x10000)*3+math.floor(color/0x100)%0x100*6+color%0x100
+          bg=luminance>=1275 and 0xffffff or 0x202020
+          fg=bg
+        end
+        gpu.cell(x+px-1,y+py-1,cell.char or " ",fg,bg)
       end
     end
   end
