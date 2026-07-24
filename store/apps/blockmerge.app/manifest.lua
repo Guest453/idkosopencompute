@@ -1,0 +1,1 @@
+return {id="blockmerge",name="block merge",version="1.0.0",author="idk os",entry="main.lua",icon="blockmerge",color=0xf4c95d,description="a compact 2048-style number merging game",package="block-merge-original",files={"manifest.lua","main.lua"}}
