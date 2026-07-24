@@ -183,43 +183,118 @@ function ui.button(gpu,x,y,w,label,active,activeBg,inactiveBg)
 end
 function ui.inside(px,py,x,y,w,h) return px>=x and py>=y and px<x+w and py<y+h end
 
--- compact cell art: each seven-character row indexes a small per-image palette;
--- dots are transparent. this retains shape and color without large pixel tables.
+-- readable 7x5 icon tiles. shapes provide silhouettes while small ascii marks
+-- stay legible on opencomputers fonts and low-depth gpus.
+local function icon(palette,rows,glyphs,mark,markColor)
+  return {palette=palette,rows=rows,glyphs=glyphs or {},mark=mark,markColor=markColor}
+end
+
 local iconArt={
-  files={{0xf5b942,0xffd66b,0x4c8bd9},{".111...","122222.","133332.","133332.",".11111."}},
-  store={{0x36b37e,0x7ee2b8,0xffffff},{"..333..",".31113.","1111111","1222221",".11111."}},
-  terminal={{0x202a38,0x4fd1a1,0xe8f0f7},{"1111111","1222221","1232221","1223321","1111111"}},
-  settings={{0x65758b,0xa9b8c9,0x49a4e8},{"1.111.1",".12321.","1123211",".12321.","1.111.1"}},
-  calculator={{0x3e78bd,0xdceaff,0x67d2a5},{"1111111","1222221","1111111","1331331","1111111"}},
-  systeminfo={{0x6b62c9,0xbab5ff,0xffffff},{"..111..",".12221.","..131..","..131..",".11111."}},
-  taskmanager={{0x29384a,0x52c7ea,0xf06f7d},{"1111111","1222231","1213231","1231211","1111111"}},
-  notes={{0xf2f4f7,0x5d8ed6,0xf0b84b},{".11111.",".12221.",".13331.",".12221.",".11111."}},
-  timer={{0x7d65c1,0xc9baff,0xffffff},{"..111..",".12221.","1233321",".12321.","..111.."}},
-  todo={{0x35a870,0xe7fff5,0x2d6ca8},{".11111.",".12221.",".13221.",".12231.",".11111."}},
-  diskusage={{0x377fa8,0x73c6df,0xf4c95d},{"..111..",".12221.","1222221","1333321",".11111."}},
-  calendar={{0xd85b62,0xffffff,0x5794d0},{".11111.","1222221","1331331","1323331",".11111."}},
-  components={{0x4c6f87,0x7dd8c3,0xf1c75b},{"..121..",".11211.","1212121",".11311.","..121.."}},
-  chicken3d={{0x66a84f,0xffffff,0xf2c84b,0xd94b45},{"..222..",".22223.",".222444",".3.3...","1111111"}},
-  snake={{0x173f35,0x55d98b,0xf4cf55},{"1111111","12222.1","1...2.1","1.322.1","1111111"}},
-  pong={{0x172b4d,0x65c8ff,0xffffff},{"1111111","12...21","12.3.21","12...21","1111111"}},
-  sketch={{0x6b5fc7,0xffca5c,0x53c6a2},{".....11","...1121",".11221.","12221..","111...."}},
-  game={{0x394a62,0x68d391,0xf36f76},{".11111.","1221221","1232221","1221321",".11111."}}
+  files=icon(
+    {0x4d9de0,0xf4c451,0x96d2ff,0xffffff},
+    {".222...","211111.","133333.","134443.",".11111."},
+    {{3,4,"=",4},{4,4,"=",4}},"F",4),
+  store=icon(
+    {0x31a46d,0x8ce2bd,0xffffff,0x1d6c4d},
+    {"..222..",".21112.","1111111","1333331",".11111."},
+    {{4,3,"+",3}},"+",3),
+  terminal=icon(
+    {0x172331,0x26394d,0x5ee0a4,0xeaf4ff},
+    {".11111.","1222221","1222221","1222221",".11111."},
+    {{2,3,">",3},{4,3,"_",4}},">",3),
+  settings=icon(
+    {0x60738a,0xaac1d4,0x45a8e8,0xf1f6fa},
+    {".11211.","1111111","1223221","1111111",".11211."},
+    {{4,3,"o",4}},"o",4),
+  calculator=icon(
+    {0x3979bd,0xd9efff,0x64d49b,0x173957},
+    {".11111.","1222221","1111111","1331331",".11111."},
+    {{2,2,"7",4},{4,2,"8",4},{2,4,"+",4},{5,4,"=",4}},"+",4),
+  systeminfo=icon(
+    {0x665bc5,0xbab4ff,0xffffff,0x363078},
+    {"..222..",".21112.",".21312.",".21112.","..222.."},
+    {{4,3,"i",3}},"i",3),
+  taskmanager=icon(
+    {0x26394d,0x50cbea,0xf16f7c,0xeaf6ff},
+    {".11111.","1222221","1232231","1242431",".12231."},
+    {{2,2,"-",4},{3,3,"|",4},{5,2,"|",4}},"|",4),
+  notes=icon(
+    {0xf1f4f7,0x568bd3,0xf2bd4d,0x25384a},
+    {".11111.","1222221","1333331","1333331",".11111."},
+    {{3,3,"-",2},{4,3,"-",2},{3,4,"-",2},{4,4,"-",2}},"N",2),
+  timer=icon(
+    {0x7962be,0xc8baff,0xffffff,0x493b83},
+    {"..222..",".21112.","1213121",".21112.","..222.."},
+    {{4,3,"+",3}},"T",3),
+  todo=icon(
+    {0x31a46d,0xe9fff5,0x3579bd,0x174d39},
+    {".11111.","1222221","1222221","1222221",".11111."},
+    {{2,2,"x",2},{4,2,"-",2},{2,3,"x",2},{4,3,"-",2},{2,4,"x",2},{4,4,"-",2}},"x",2),
+  diskusage=icon(
+    {0x347da5,0x72c8df,0xf3ca55,0xffffff},
+    {"..111..",".12221.","1233211","1233311",".11111."},
+    {{4,3,"%",4}},"%",4),
+  calendar=icon(
+    {0xd75961,0xffffff,0x5794d0,0x26384a},
+    {".11111.","1222221","3333333","3444443",".33333."},
+    {{3,4,"2",4},{4,4,"4",4}},"2",4),
+  components=icon(
+    {0x496b84,0x76d6c1,0xf1c552,0xeaf7ff},
+    {".2.2.2.","2111112","2113112","2111112",".2.2.2."},
+    {{3,3,"C",4},{4,3,"P",4},{5,3,"U",4}},"C",4),
+  inferno=icon(
+    {0x2a1718,0xd45a37,0xf4a43c,0xffe2a3},
+    {".11111.","1122211","1223221","1233321",".13331."},
+    {},"^",4),
+  chicken3d=icon(
+    {0x65a44e,0xffffff,0xf0c44a,0xd84b43},
+    {".11111.","122221.","122234.","112244.",".33333."},
+    {{3,3,"o",4}},"o",2),
+  snake=icon(
+    {0x163d33,0x55d98b,0xf3ce53,0xb6f4c9},
+    {".11111.","1222211","1111211","1333211",".11111."},
+    {{4,3,"S",4}},"S",4),
+  pong=icon(
+    {0x162a4b,0x65c8ff,0xffffff,0xff6fae},
+    {".11111.","1211121","1213121","1211121",".11111."},
+    {{2,3,"|",2},{4,3,"o",3},{6,3,"|",4}},"o",3),
+  minesweeper=icon(
+    {0x34495e,0x9aabc0,0xe95662,0xf2c94c},
+    {".11111.","1222221","1232321","1223221",".11111."},
+    {{4,3,"*",3}},"*",3),
+  breakout=icon(
+    {0x17284a,0x55c8ff,0xff6f91,0xf4cf58},
+    {".11111.","1334431","1443341","1112111",".12221."},
+    {{4,4,"o",2}},"=",2),
+  spamtontrash=icon(
+    {0x141414,0xf2f2f2,0xff4db8,0xffdf42,0xd93443},
+    {".11111.","1222221","1232421","1255521",".11111."},
+    {{4,4,"$",2}},"$",3),
+  sketch=icon(
+    {0x6b5fc7,0xffca5c,0x53c6a2,0xffffff},
+    {".11111.","1222311","1123311","1112311",".11121."},
+    {{4,3,"/",4}},"/",4),
+  game=icon(
+    {0x394a62,0x68d391,0xf36f76,0xffffff},
+    {".11111.","1222221","1233321","1243421",".11111."},
+    {{2,3,"+",4},{5,3,"o",4}},"+",4)
 }
+
 local iconColors={0x4f8fe8,0x40b887,0xa06ee1,0xe0874c,0xd95f70,0x3fa7b5}
 local iconCache,iconCacheSize={},0
 
 local function fallbackArt(name,color)
-  local hash=0 for i=1,#name do hash=(hash*33+name:byte(i))%65521 end
-  local rows={}
-  for y=1,5 do
-    local row={}
-    for x=1,7 do
-      local edge=x==1 or x==7 or y==1 or y==5
-      row[x]=edge and "1" or (((hash+17*x+31*y)%(4+x+y)<2) and "2" or ".")
-    end
-    rows[y]=table.concat(row)
-  end
-  return {{color,0xffffff,0x26384a},rows}
+  local letter=tostring(name or "app"):match("[%w]") or "?"
+  letter=letter:upper()
+  return icon(
+    {color,0xffffff,0x1d2b3a},
+    {".11111.","1111111","1111111","1111111",".11111."},
+    {{4,3,letter,2}},letter,2)
+end
+
+local function paletteColor(palette,value)
+  if type(value)~="number" then return 0xffffff end
+  return palette[value] or value
 end
 
 function ui.icon(name,color,size)
@@ -229,21 +304,50 @@ function ui.icon(name,color,size)
   local hash=0 for i=1,#name do hash=(hash+name:byte(i)*i)%997 end
   local suppliedColor=tonumber(color)
   local art=iconArt[name] or fallbackArt(name,suppliedColor or iconColors[(hash%#iconColors)+1])
-  local palette={table.unpack(art[1])}
+  local palette={table.unpack(art.palette)}
   if suppliedColor and suppliedColor>=0 and suppliedColor<=0xffffff then palette[1]=suppliedColor end
   local small=size=="small" or tonumber(size)==3
   local image={width=small and 5 or 7,height=small and 3 or 5,cells={}}
+  local xs=small and {1,2,4,6,7} or {1,2,3,4,5,6,7}
+  local ys=small and {1,3,5} or {1,2,3,4,5}
+
   for y=1,image.height do
-    local sy=small and ({1,3,5})[y] or y
+    local sy=ys[y]
     for x=1,image.width do
-      local sx=small and ({1,2,4,6,7})[x] or x
-      local key=art[2][sy]:sub(sx,sx)
+      local sx=xs[x]
+      local key=art.rows[sy]:sub(sx,sx)
       local index=tonumber(key)
-      if index and palette[index] then image.cells[(y-1)*image.width+x]={char=" ",bg=palette[index],fg=palette[index]} end
+      if index and palette[index] then
+        image.cells[(y-1)*image.width+x]={char=" ",bg=palette[index],fg=palette[index]}
+      end
     end
   end
+
+  if small then
+    local center=(2-1)*image.width+3
+    local cell=image.cells[center] or {bg=palette[1]}
+    image.cells[center]={char=unicode.sub(tostring(art.mark or "?"),1,1),fg=paletteColor(palette,art.markColor or 2),bg=cell.bg or palette[1]}
+  else
+    for _,glyph in ipairs(art.glyphs) do
+      local x,y,char,fg=glyph[1],glyph[2],glyph[3],glyph[4]
+      if x>=1 and x<=image.width and y>=1 and y<=image.height then
+        local index=(y-1)*image.width+x
+        local cell=image.cells[index] or {bg=palette[1]}
+        image.cells[index]={char=unicode.sub(tostring(char or " "),1,1),fg=paletteColor(palette,fg),bg=cell.bg or palette[1]}
+      end
+    end
+  end
+
   if #cacheKey<96 and iconCacheSize<128 then iconCache[cacheKey]=image iconCacheSize=iconCacheSize+1 end
   return image
+end
+
+local function monochrome(color)
+  color=tonumber(color) or 0
+  local red=math.floor(color/0x10000)%0x100
+  local green=math.floor(color/0x100)%0x100
+  local blue=color%0x100
+  return red*3+green*6+blue>=1275 and 0xffffff or 0x202020
 end
 
 function ui.image(gpu,x,y,image)
@@ -252,14 +356,18 @@ function ui.image(gpu,x,y,image)
     for px=1,(image.width or 0) do
       local cell=image.cells[(py-1)*image.width+px]
       if cell then
+        local char=cell.char or " "
         local fg,bg=cell.fg,cell.bg
         if gpu.depth and gpu.depth<4 then
-          local color=tonumber(bg) or 0
-          local luminance=math.floor(color/0x10000)*3+math.floor(color/0x100)%0x100*6+color%0x100
-          bg=luminance>=1275 and 0xffffff or 0x202020
-          fg=bg
+          bg=monochrome(bg)
+          if char~=" " then
+            fg=monochrome(fg)
+            if fg==bg then fg=bg==0xffffff and 0x202020 or 0xffffff end
+          else
+            fg=bg
+          end
         end
-        gpu.cell(x+px-1,y+py-1,cell.char or " ",fg,bg)
+        gpu.cell(x+px-1,y+py-1,char,fg,bg)
       end
     end
   end
