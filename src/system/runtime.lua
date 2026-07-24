@@ -2,14 +2,69 @@ local runtime = {}
 local rawComponent, rawComputer, rawUnicode = component, computer, unicode
 local boot, gpu, cursorY, screenWidth, screenHeight
 
-local function primary(kind)
-  local listed, iterator = pcall(rawComponent.list, kind, true)
-  if not listed or type(iterator) ~= "function" then return nil end
-  local addressOk, address = pcall(iterator)
-  if not addressOk or not address then return nil end
-  local proxyOk, proxy = pcall(rawComponent.proxy, address)
-  if proxyOk and proxy then return proxy,address end
+local function proxyComponent(value)
+  if type(value) == "string" then
+    local ok, proxy = pcall(rawComponent.proxy, value)
+    if ok and proxy then return proxy, value end
+  elseif type(value) == "table" or type(value) == "userdata" then
+    local address
+    pcall(function() address = value.address end)
+    return value, address
+  end
+
   return nil
+end
+
+local function listedComponent(kind, exact)
+  local ok, result
+
+  if exact == nil then
+    ok, result = pcall(rawComponent.list, kind)
+  else
+    ok, result = pcall(rawComponent.list, kind, exact)
+  end
+
+  if not ok then return nil end
+
+  if type(result) == "function" then
+    local nextOk, address = pcall(result)
+    if nextOk then return address end
+  elseif type(result) == "string" then
+    return result
+  elseif type(result) == "table" then
+    for key, value in pairs(result) do
+      if type(key) == "string" and value == kind then
+        return key
+      elseif type(key) == "number" and type(value) == "string" then
+        return value
+      elseif type(value) == "table" or type(value) == "userdata" then
+        local address
+        pcall(function() address = value.address end)
+        if address then return address end
+      end
+    end
+  end
+
+  return nil
+end
+
+local function primary(kind)
+  -- Some BIOSes expose component.gpu/component.screen directly.
+  local directOk, direct = pcall(function()
+    return rawComponent[kind]
+  end)
+
+  if directOk and direct then
+    local proxy, address = proxyComponent(direct)
+    if proxy then return proxy, address end
+  end
+
+  -- Try the least restrictive call first, then stock OC exact matching.
+  local address =
+    listedComponent(kind, nil) or
+    listedComponent(kind, true)
+
+  return proxyComponent(address)
 end
 
 local function setupConsole()
