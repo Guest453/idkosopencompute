@@ -48,6 +48,14 @@ return {
     files={"manifest.lua","main.lua"}
   },
   {
+    id="recoveryupdater", name="recovery updater", version="1.0.0", author="idk os",
+    category="system", icon="recoveryupdater", color=0x397fca,
+    description="reboot into a ram-resident full-system updater",
+    details="installs a one-shot boot bridge, stages every official image file, updates /init.lua last, and rolls back failed writes.",
+    path="store/apps/recoveryupdater.app", package="idkos-recovery-updater",
+    files={"manifest.lua","main.lua","bridge.lua","updater.lua"}
+  },
+  {
     id="inferno", name="inferno: transformed wad geometry", version="2.2.0", author="idk os / SuyaSS",
     category="games", icon="inferno", color=0xd05a3a,
     description="a transformed BFS1H MAP01 geometry demo",
