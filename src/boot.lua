@@ -7,9 +7,43 @@ local function valid(core)
   return type(core)=="table" and type(core.run)=="function" and type(core.restore)=="function"
 end
 
-local function loadCore(path)
-  local ok,result=pcall(dofile,path)
+local function readSource(path)
+  local file,reason=io.open(path,"r")
+  if not file then return nil,reason end
+  local source=file:read("*a")
+  file:close()
+  return source
+end
+
+local function loadPatchedCore(path)
+  local source,reason=readSource(path)
+  if not source then return nil,reason end
+
+  local patchOk,patcher=pcall(dofile,"/idkos/system/shell_patch.lua")
+  if patchOk and type(patcher)=="table" and type(patcher.apply)=="function" then
+    local patched,patchReason=patcher.apply(source)
+    if not patched then return nil,patchReason end
+    source=patched
+  end
+
+  local compiler=loadstring or load
+  local chunk,compileReason=compiler(source,"@"..path)
+  if not chunk then return nil,compileReason end
+  local ok,result=pcall(chunk)
   if not ok then return nil,result end
+  return result
+end
+
+local function loadCore(path)
+  local result,reason
+  if path=="/idkos/system/core_next.lua" then
+    result,reason=loadPatchedCore(path)
+  else
+    local ok
+    ok,result=pcall(dofile,path)
+    if not ok then reason=result result=nil end
+  end
+  if not result then return nil,reason end
   if not valid(result) then return nil,"core returned an invalid interface" end
   return result
 end
