@@ -6,24 +6,29 @@ local path = "/home"
 local history = {path}
 local historyIndex = 1
 local selected, offset, status, confirmDelete = nil, 0, "ready", nil
+
 local favorites = {
-{name = "home", path = "/home", icon = "finder"},
+{name = "home", path = "/home", icon = "folder"},
 {name = "applications", path = "/home/Apps", icon = "launchpad"},
-{name = "system", path = "/idkos", icon = "settings"},
-{name = "computer", path = "/", icon = "components"}
+{name = "system", path = "/idkos", icon = "folder"},
+{name = "computer", path = "/", icon = "folder"}
 }
+
 local function short(text, limit)
 return unicode.sub(tostring(text or ""), 1, math.max(0, limit or 1))
 end
+
 local function cleanName(name)
 return tostring(name or ""):gsub("/$", "")
 end
+
 local function humanSize(bytes)
 bytes = tonumber(bytes) or 0
 if bytes >= 1024 * 1024 then return string.format("%.1f mb", bytes / 1024 / 1024) end
 if bytes >= 1024 then return string.format("%.1f kb", bytes / 1024) end
 return tostring(bytes) .. " b"
 end
+
 local function hit(id, x, y, width, height, fallbackLabel)
 if type(win.hit) == "function" then
 win:hit(id, x, y, width, height or 1)
@@ -31,6 +36,7 @@ else
 win:button(id, x, y, width, fallbackLabel or "open")
 end
 end
+
 local function remember(nextPath)
 if type(nextPath) ~= "string" or not app.fs.exists(nextPath) or not app.fs.isDirectory(nextPath) then
 status = "folder is unavailable"
@@ -46,6 +52,7 @@ selected, offset, confirmDelete = nil, 0, nil
 status = "opened " .. path
 return true
 end
+
 local function goHistory(delta)
 local nextIndex = historyIndex + delta
 if history[nextIndex] and app.fs.exists(history[nextIndex]) then
@@ -55,6 +62,7 @@ selected, offset, confirmDelete = nil, 0, nil
 status = delta < 0 and "back" or "forward"
 end
 end
+
 local function entries()
 local result = {}
 local iterator, reason = app.fs.list(path)
@@ -78,17 +86,18 @@ return a.name:lower() < b.name:lower()
 end)
 return result
 end
+
 local function selectedEntry(list)
 return selected and list[selected] or nil
 end
+
 local function extension(name)
 return tostring(name or ""):match("%.([%w_%-]+)$") or "file"
 end
+
 local function preview(entry)
 if not entry then return {"nothing selected", "choose a file or folder"} end
-if entry.dir then
-return {entry.name, "folder", "open to browse contents"}
-end
+if entry.dir then return {entry.name, "folder", "open to browse contents"} end
 local lines = {entry.name, humanSize(entry.size), extension(entry.name)}
 if entry.size > 8192 then
 lines[#lines + 1] = "preview unavailable"
@@ -107,15 +116,13 @@ position = position + 24
 end
 return lines
 end
+
 local function openEntry(entry)
 if not entry then status = "select an item first" return end
 confirmDelete = nil
-if entry.dir then
-remember(entry.target)
-else
-status = entry.name .. " selected"
+if entry.dir then remember(entry.target) else status = entry.name .. " selected" end
 end
-end
+
 local function runEntry(entry)
 if not entry or entry.dir or entry.name:sub(-4) ~= ".lua" then
 status = "select a lua file"
@@ -124,6 +131,7 @@ end
 local ok, reason = pcall(dofile, entry.target)
 status = ok and ("ran " .. entry.name) or ("script error: " .. tostring(reason))
 end
+
 local function newFolder()
 local base = app.fs.concat(path, "untitled folder")
 local target = base
@@ -136,6 +144,7 @@ local ok, reason = app.fs.makeDirectory(target)
 status = ok and ("created " .. cleanName(target:match("[^/]+$") or target)) or tostring(reason)
 selected, confirmDelete = nil, nil
 end
+
 local function deleteEntry(entry)
 if not entry then status = "select an item first" return end
 if confirmDelete ~= entry.target then
@@ -147,6 +156,7 @@ local ok, reason = app.fs.remove(entry.target)
 status = ok and ("deleted " .. entry.name) or ("delete failed: " .. tostring(reason))
 selected, confirmDelete = nil, nil
 end
+
 local function drawToolbar(width)
 win:fill(1, 1, width, 3, 0xe7edf2)
 win:button("back", 2, 1, 6, "back")
@@ -155,11 +165,13 @@ win:button("up", 18, 1, 5, "up")
 win:button("home", 24, 1, 6, "home")
 win:button("refresh", 31, 1, 8, "refresh")
 if width >= 56 then
-win:text(width - 15, 1, "finder", 0x5f7485, 0xe7edf2)
+win:icon(width - 6, 1, "finder", nil, "small")
+win:text(width - 15, 2, "finder", 0x5f7485, 0xe7edf2)
 end
-win:fill(2, 2, width - 3, 1, 0xf8fafc)
-win:text(3, 2, short(path, width - 6), 0x29485d, 0xf8fafc)
+win:fill(2, 2, math.max(1, width - 19), 1, 0xf8fafc)
+win:text(3, 2, short(path, math.max(1, width - 22)), 0x29485d, 0xf8fafc)
 end
+
 local function drawSidebar(sidebarWidth, height)
 if sidebarWidth <= 0 then return end
 win:fill(1, 4, sidebarWidth, height - 6, 0xdce5ec)
@@ -169,52 +181,72 @@ local y = 5 + (index - 1) * 3
 local active = path == item.path
 local background = active and 0xb9ddf5 or 0xdce5ec
 win:fill(1, y, sidebarWidth, 2, background)
-win:icon(2, y, item.icon, active and 0x3188c9 or 0x60798b, "small")
-win:text(6, y + 1, short(item.name, sidebarWidth - 7), active and 0x173247 or 0x40596b, background)
+win:icon(2, y, item.icon, nil, "small")
+win:text(7, y, short(item.name, sidebarWidth - 8), active and 0x173247 or 0x40596b, background)
+win:text(7, y + 1, short(item.path, sidebarWidth - 8), 0x718695, background)
 hit("favorite:" .. index, 1, y, sidebarWidth, 2, item.name)
 end
 win:text(2, height - 2, "idk finder", 0x7b8e9d, 0xdce5ec)
 end
+
+local function drawFileGlyph(x, y)
+win:fill(x, y, 3, 2, 0xd5e0e8)
+win:text(x + 1, y, "-", 0x718695, 0xd5e0e8)
+win:text(x + 1, y + 1, "-", 0x718695, 0xd5e0e8)
+end
+
 local function drawList(list, mainX, mainWidth, height, rows)
 win:fill(mainX, 4, mainWidth, height - 6, 0xf8fafc)
 win:fill(mainX, 4, mainWidth, 1, 0xe8eef3)
 win:text(mainX + 1, 4, "name", 0x617487, 0xe8eef3)
-if mainWidth >= 30 then win:text(mainX + mainWidth - 10, 4, "size", 0x617487, 0xe8eef3) end
+if mainWidth >= 30 then win:text(mainX + mainWidth - 10, 4, "kind / size", 0x617487, 0xe8eef3) end
 for row = 1, rows do
 local index = offset + row
 local entry = list[index]
-local y = 4 + row
+local y = 5 + (row - 1) * 2
 local rowBackground = row % 2 == 0 and 0xf0f4f7 or 0xf8fafc
+win:fill(mainX, y, mainWidth, 2, rowBackground)
 if entry then
 local selectedNow = selected == index
 local background = selectedNow and 0xb9ddf5 or rowBackground
 local foreground = selectedNow and 0x173247 or 0x294052
-win:fill(mainX, y, mainWidth, 1, background)
-win:text(mainX + 1, y, entry.dir and ">" or "-", entry.dir and 0x3188c9 or 0x8aa0b0, background)
-local labelWidth = mainWidth - (mainWidth >= 30 and 13 or 4)
-win:text(mainX + 3, y, short(entry.name, labelWidth), foreground, background)
-if mainWidth >= 30 then
-win:text(mainX + mainWidth - 10, y, entry.dir and "folder" or humanSize(entry.size), 0x617487, background)
-end
-hit("select:" .. index, mainX, y, mainWidth, 1, entry.name)
+win:fill(mainX, y, mainWidth, 2, background)
+if entry.dir then
+win:icon(mainX + 1, y, "folder", nil, "small")
 else
-win:fill(mainX, y, mainWidth, 1, rowBackground)
+drawFileGlyph(mainX + 1, y)
+end
+local labelWidth = mainWidth - (mainWidth >= 30 and 17 or 8)
+win:text(mainX + 6, y, short(entry.name, labelWidth), foreground, background)
+win:text(mainX + 6, y + 1, entry.dir and "folder" or extension(entry.name), 0x718695, background)
+if mainWidth >= 30 then
+win:text(mainX + mainWidth - 10, y, entry.dir and "--" or humanSize(entry.size), 0x617487, background)
+end
+hit("select:" .. index, mainX, y, mainWidth, 2, entry.name)
 end
 end
 end
+
 local function drawPreview(entry, previewX, previewWidth, height)
 if previewWidth <= 0 then return end
 win:fill(previewX, 4, previewWidth, height - 6, 0xedf3f7)
 win:text(previewX + 1, 4, "preview", 0x617487, 0xedf3f7)
+local textY = 6
+if entry and entry.dir then
+win:icon(previewX + math.max(1, math.floor((previewWidth - 8) / 2)), 6, "folder", nil, "large")
+textY = 11
+end
 local info = preview(entry)
 for index, line in ipairs(info) do
-if index + 5 < height - 1 then
+local y = textY + index - 1
+if y < height - 2 then
 local foreground = index == 1 and 0x1d2b3a or 0x617487
-win:text(previewX + 1, index + 5, short(line, previewWidth - 2), foreground, 0xedf3f7)
+win:text(previewX + 1, y, short(line, previewWidth - 2), foreground, 0xedf3f7)
 end
 end
 end
-local function drawFooter(width, height, count, rows)
+
+local function drawFooter(width, height, count)
 local actionY = height - 2
 win:fill(1, actionY - 1, width, 3, 0xe7edf2)
 win:button("open", 2, actionY, 7, "open")
@@ -225,8 +257,8 @@ win:button("prev", 39, actionY, 7, "prev")
 win:button("next", 47, actionY, 7, "next")
 if width >= 66 then win:text(width - 13, actionY, tostring(count) .. " items", 0x617487, 0xe7edf2) end
 win:text(2, height - 1, short(status or "ready", width - 4), 0x38536a, 0xe7edf2)
-return rows
 end
+
 local function draw()
 local width, height = win.width, win.height
 local sidebarWidth = width >= 52 and 16 or 0
@@ -234,7 +266,7 @@ local previewWidth = width >= 68 and 20 or 0
 local mainX = sidebarWidth > 0 and sidebarWidth + 1 or 1
 local mainRight = previewWidth > 0 and width - previewWidth or width
 local mainWidth = math.max(14, mainRight - mainX)
-local rows = math.max(4, height - 10)
+local rows = math.max(2, math.floor((height - 8) / 2))
 local list = entries()
 if selected and not list[selected] then selected = nil end
 offset = math.max(0, math.min(offset, math.max(0, #list - rows)))
@@ -243,9 +275,10 @@ drawToolbar(width)
 drawSidebar(sidebarWidth, height)
 drawList(list, mainX, mainWidth, height, rows)
 drawPreview(selectedEntry(list), width - previewWidth + 1, previewWidth, height)
-drawFooter(width, height, #list, rows)
+drawFooter(width, height, #list)
 return list, rows
 end
+
 while true do
 local list, rows = draw()
 local name, address, id, code, player = app.pull()
