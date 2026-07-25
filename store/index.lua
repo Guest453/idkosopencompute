@@ -50,6 +50,14 @@ return {
     files={"manifest.lua","main.lua","bridge.lua","updater.lua"}
   },
   {
+    id="music", name="music", version="1.0.0", author="idk os",
+    category="multimedia", icon="music", color=0x4ec7e8,
+    description="computronics sound-card music player and synthesizer",
+    details="plays original built-in tracks through the computronics sound component with selectable waveforms, volume, and note preview keys.",
+    path="store/apps/music.app", package="computronics-music-original",
+    files={"manifest.lua","main.lua"}
+  },
+  {
     id="blockmerge", name="block merge", version="1.0.0", author="idk os",
     category="games", icon="blockmerge", color=0xf4c95d,
     description="a compact 2048-style number merging game",
