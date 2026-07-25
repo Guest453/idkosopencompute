@@ -57,9 +57,9 @@ end
 
 local function iconWidth(size)
   if size == "small" or size == "mini" or tonumber(size) == 3 then return 4 end
-  if size == "dock" then return 6 end
-  if size == "large" then return 8 end
-  return 6
+  if size == "dock" then return 10 end
+  if size == "large" then return 12 end
+  return 10
 end
 
 local function packPixels(width, height, sampler)
@@ -134,17 +134,23 @@ end
 
 function ui.image(gpu, x, y, image, baseBackground)
   if type(image) == "table" and image.pixelSprite and type(image.cells) == "table" then
-    local base = tonumber(baseBackground) or tonumber(gpu.bg) or 0x000000
     for cellY = 1, image.height do
       for cellX = 1, image.width do
         local cell = image.cells[(cellY - 1) * image.width + cellX]
         if cell then
-          local upper = cell.upper or base
-          local lower = cell.lower or base
+          local baseUpper, baseLower
+          if type(gpu.halvesAt) == "function" then
+            baseUpper, baseLower = gpu.halvesAt(x + cellX - 1, y + cellY - 1)
+          else
+            local base = tonumber(baseBackground) or tonumber(gpu.bg) or 0x000000
+            baseUpper, baseLower = base, base
+          end
+          local upper = cell.upper or baseUpper
+          local lower = cell.lower or baseLower
           if type(gpu.semi) == "function" then
             gpu.semi(x + cellX - 1, y + cellY - 1, upper, lower)
           else
-            local color = cell.upper or cell.lower or base
+            local color = cell.upper or cell.lower or baseUpper
             gpu.cell(x + cellX - 1, y + cellY - 1, " ", color, color)
           end
         end
@@ -157,8 +163,61 @@ end
 
 function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
   local renderer = sourceRenderer(gpu, width, height, mirrors, mirrorFailed)
+  local sourceBeginFrame = renderer.beginFrame
   local sourceCell = renderer.cell
   local sourceFill = renderer.fill
+  local sourceSet = renderer.set
+  local sourceSemi = renderer.semi
+  local halves = {}
+
+  local function halfIndex(x, y)
+    return (y - 1) * width + x
+  end
+
+  local function storeHalves(x, y, upper, lower)
+    if x >= 1 and x <= width and y >= 1 and y <= height then
+      halves[halfIndex(x, y)] = {upper, lower}
+    end
+  end
+
+  function renderer.beginFrame()
+    halves = {}
+    return sourceBeginFrame()
+  end
+
+  function renderer.halvesAt(x, y)
+    local stored = halves[halfIndex(x, y)]
+    if stored then return stored[1], stored[2] end
+    local base = tonumber(renderer.bg) or 0x000000
+    return base, base
+  end
+
+  function renderer.set(x, y, value)
+    value = tostring(value or "")
+    local result = sourceSet(x, y, value)
+    local base = tonumber(renderer.bg) or 0x000000
+    for offset = 0, unicode.len(value) - 1 do
+      storeHalves(x + offset, y, base, base)
+    end
+    return result
+  end
+
+  function renderer.fill(x, y, fillWidth, fillHeight, character)
+    local result = sourceFill(x, y, fillWidth, fillHeight, character)
+    local base = tonumber(renderer.bg) or 0x000000
+    for py = y, y + fillHeight - 1 do
+      for px = x, x + fillWidth - 1 do
+        storeHalves(px, py, base, base)
+      end
+    end
+    return result
+  end
+
+  function renderer.semi(x, y, upper, lower)
+    local result = sourceSemi(x, y, upper, lower)
+    storeHalves(x, y, upper, lower)
+    return result
+  end
 
   function renderer.cell(x, y, character, foreground, background)
     if (character == "+" or character == ".") and foreground == 0x4e8296 then
@@ -174,22 +233,33 @@ function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
     elseif character == "o" and (background == 0xe45b67 or background == 0xf1b94e or background == 0x51b77a) then
       character = " "
     end
-    return sourceCell(x, y, character, foreground, background)
-  end
-
-  function renderer.fill(x, y, fillWidth, fillHeight, character)
-    if y >= renderer.height - 2 and fillWidth > 8 then
-      if renderer.bg == 0xd9e8f2 or renderer.bg == 0x8ca4b5 or renderer.bg == 0x3e5568 then
-        x = x + 1
-        fillWidth = math.max(1, fillWidth - 2)
-      end
-    elseif y == renderer.height - 3 and renderer.bg == 0x071822 and fillWidth > 8 then
-      return
-    end
-    return sourceFill(x, y, fillWidth, fillHeight, character)
+    local result = sourceCell(x, y, character, foreground, background)
+    local base = tonumber(background) or tonumber(renderer.bg) or 0x000000
+    storeHalves(x, y, base, base)
+    return result
   end
 
   return renderer
+end
+
+function ui.pixelRect(gpu, x, semiY, width, semiHeight, color)
+  width = math.floor(tonumber(width) or 0)
+  semiHeight = math.floor(tonumber(semiHeight) or 0)
+  if width < 1 or semiHeight < 1 then return end
+  for py = semiY, semiY + semiHeight - 1 do
+    local cellY = math.floor((py + 1) / 2)
+    for px = x, x + width - 1 do
+      local upper, lower
+      if type(gpu.halvesAt) == "function" then
+        upper, lower = gpu.halvesAt(px, cellY)
+      else
+        local base = tonumber(gpu.bg) or 0x000000
+        upper, lower = base, base
+      end
+      if py % 2 == 1 then upper = color else lower = color end
+      gpu.semi(px, cellY, upper, lower)
+    end
+  end
 end
 
 function ui.button(gpu, x, y, width, label, active, activeBg, inactiveBg)
@@ -203,7 +273,7 @@ end
 
 function ui.rule(gpu, x, y, width, color, background)
   if width < 1 then return end
-  ui.fill(gpu, x, y, width, 1, color or background or 0x91a5b5, " ")
+  ui.pixelRect(gpu, x, y * 2, width, 1, color or background or 0x91a5b5)
 end
 
 return ui
