@@ -5,7 +5,7 @@ return function(app)
 
   local tracks = {
     {
-      name="night drive", bpm=112, wave=2,
+      name="night drive", bpm=112,
       events={
         {{60,67},1}, {{64,71},1}, {{67,72},1}, {{64,71},1},
         {{57,64},1}, {{60,67},1}, {{64,69},1}, {{60,67},1},
@@ -14,7 +14,7 @@ return function(app)
       }
     },
     {
-      name="blue terminal", bpm=128, wave=3,
+      name="blue terminal", bpm=128,
       events={
         {{72},0.5}, {{76},0.5}, {{79},0.5}, {{84},0.5},
         {{79},0.5}, {{76},0.5}, {{74},0.5}, {{71},0.5},
@@ -23,7 +23,7 @@ return function(app)
       }
     },
     {
-      name="quiet boot", bpm=86, wave=2,
+      name="quiet boot", bpm=86,
       events={
         {{60},1}, {{64},1}, {{67},2},
         {{59},1}, {{62},1}, {{67},2},
@@ -54,10 +54,10 @@ return function(app)
   end
 
   local function firstAddress(kind)
-    for _, exact in ipairs({nil, true}) do
+    for _, exact in ipairs({false, true}) do
       local ok, listed
-      if exact == nil then ok, listed = pcall(component.list, kind)
-      else ok, listed = pcall(component.list, kind, exact) end
+      if not exact then ok, listed = pcall(component.list, kind)
+      else ok, listed = pcall(component.list, kind, true) end
       if ok then
         if type(listed) == "function" then
           local nextOk, address = pcall(listed)
@@ -212,7 +212,7 @@ return function(app)
     local progress = 0
     if playing then progress = math.max(0, math.min(1, (eventIndex - 1) / math.max(1, #track.events))) end
     win:fill(panelX + 2, 8, math.max(1, panelW - 4), 1, 0xd8e2e9)
-    win:fill(panelX + 2, 8, math.max(1, math.floor((panelW - 4) * progress)), 1, 0x4ec7e8)
+    if progress > 0 then win:fill(panelX + 2, 8, math.max(1, math.floor((panelW - 4) * progress)), 1, 0x4ec7e8) end
 
     win:button("play", panelX + 2, 10, 10, playing and "restart" or "play")
     win:button("stop", panelX + 13, 10, 9, "stop")
@@ -276,6 +276,7 @@ return function(app)
         waveIndex = wave
         status = "wave: " .. waves[wave].name
       elseif note then
+        stopSound()
         previewNote(note)
       elseif id == "play" then
         stopSound()
