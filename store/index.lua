@@ -50,10 +50,10 @@ return {
     files={"manifest.lua","main.lua","bridge.lua","updater.lua"}
   },
   {
-    id="music", name="music", version="1.0.0", author="idk os",
+    id="music", name="music", version="1.1.0", author="idk os",
     category="multimedia", icon="music", color=0x4ec7e8,
-    description="computronics sound-card music player and synthesizer",
-    details="plays original built-in tracks through the computronics sound component with selectable waveforms, volume, and note preview keys.",
+    description="computronics music player, piano, and song maker",
+    details="includes a playable two-octave keyboard layout, four layered instruments, a 16-step polyphonic sequencer, tempo and octave controls, record mode, looping, and local song save/load.",
     path="store/apps/music.app", package="computronics-music-original",
     files={"manifest.lua","main.lua"}
   },
