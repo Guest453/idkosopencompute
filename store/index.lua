@@ -50,7 +50,7 @@ return {
     files={"manifest.lua","main.lua","bridge.lua","updater.lua"}
   },
   {
-    id="music", name="music", version="1.0.1", author="idk os",
+    id="music", name="music", version="1.0.0", author="idk os",
     category="multimedia", icon="music", color=0x4ec7e8,
     description="computronics sound-card music player and synthesizer",
     details="plays original built-in tracks through the computronics sound component with selectable waveforms, volume, and note preview keys.",
