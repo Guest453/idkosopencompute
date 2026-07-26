@@ -15,6 +15,21 @@ local function readSource(path)
   return source
 end
 
+local function injectTheme(source)
+  local replacement=[[
+local ui = dofile("/idkos/system/ui_next.lua")
+do
+  local themeOk,theme=pcall(dofile,"/idkos/system/theme.lua")
+  if themeOk and type(theme)=="table" and type(theme.apply)=="function" then
+    ui=theme.apply(ui)
+  end
+end]]
+  local changed=0
+  source,changed=source:gsub('local ui = dofile%("/idkos/system/ui_next.lua"%)',replacement,1)
+  if changed~=1 then return nil,"could not attach global theme renderer" end
+  return source
+end
+
 local function loadPatchedCore(path)
   local source,reason=readSource(path)
   if not source then return nil,reason end
@@ -25,6 +40,10 @@ local function loadPatchedCore(path)
     if not patched then return nil,patchReason end
     source=patched
   end
+
+  local themed,themeReason=injectTheme(source)
+  if not themed then return nil,themeReason end
+  source=themed
 
   local compiler=loadstring or load
   local chunk,compileReason=compiler(source,"@"..path)
