@@ -1,7 +1,7 @@
 return {
   id="music",
   name="music",
-  version="1.0.1",
+  version="1.0.0",
   author="idk os",
   entry="main.lua",
   icon="music",
