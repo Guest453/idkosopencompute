@@ -2,7 +2,7 @@ return {
   format = "idk-os-update-1",
   version = 8,
   name = "update8.os",
-  ref = "30fb42c87049d157b71eab414e84ecd869a8b55e",
+  ref = "4349a143872f2a62c7caff72a17b42ceae83bb7e",
   channel = "main",
   notes = {
     "automatic update check during every boot",
