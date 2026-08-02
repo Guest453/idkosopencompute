@@ -2,7 +2,7 @@ local component = require("component")
 local computer = require("computer")
 local filesystem = require("filesystem")
 
-local BASE = "https://raw.githubusercontent.com/Guest453/idkosopencompute/main/"
+local ROOT = "https://raw.githubusercontent.com/Guest453/idkosopencompute/"
 local UPDATE_DIR = "/idkos/update"
 local STAGE = UPDATE_DIR .. "/stage"
 local BACKUP = UPDATE_DIR .. "/backup"
@@ -258,6 +258,9 @@ local function parsePackage(source)
   if type(package.files) ~= "table" or #package.files < 1 or #package.files > 128 then return nil, "invalid package file count" end
   local version = tonumber(package.version)
   if not version or version % 1 ~= 0 or version < 1 then return nil, "invalid package version" end
+  if type(package.ref) ~= "string" or not package.ref:match("^[0-9a-f]+$") or #package.ref ~= 40 then
+    return nil, "invalid pinned update ref"
+  end
   local entries, seen = {}, {}
   for _, item in ipairs(package.files) do
     if type(item) ~= "table" or not safeSource(item.source) or not safeTarget(item.target) or seen[item.target] then
@@ -315,6 +318,7 @@ return function(packageSource)
     if not package then error(packageReason, 0) end
     log("package: " .. tostring(package.name or "unnamed.os"))
     log("target version: " .. tostring(package.version))
+    log("pinned commit: " .. package.ref)
     log("manifest entries: " .. tostring(#package.entries))
 
     if filesystem.exists(STATE) then
@@ -334,7 +338,7 @@ return function(packageSource)
     local total = 0
     for index, item in ipairs(package.entries) do
       log(string.format("download %d/%d  %s", index, #package.entries, item.source))
-      local data, reason = fetch(BASE .. item.source, MAX_FILE)
+      local data, reason = fetch(ROOT .. package.ref .. "/" .. item.source, MAX_FILE)
       if not data then error(item.source .. ": " .. tostring(reason), 0) end
       total = total + #data
       if total > MAX_TOTAL then error("package exceeds total size limit", 0) end
