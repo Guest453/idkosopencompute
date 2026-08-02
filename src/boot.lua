@@ -15,6 +15,47 @@ local function readSource(path)
   return source
 end
 
+local function writeLog(path,message)
+  pcall(function()
+    local filesystem=require("filesystem")
+    local file=filesystem.open(path,"w")
+    if file then file:write(tostring(message):sub(1,32768)) file:close() end
+  end)
+end
+
+local function writeFallbackLog(message)
+  writeLog("/idkos/next-core.log",message)
+end
+
+local function runUpdateBootstrap()
+  local exists=false
+  pcall(function()
+    local filesystem=require("filesystem")
+    exists=filesystem.exists("/idkos/system/update_boot.lua")
+  end)
+  if not exists then return end
+
+  local loaded,updater=pcall(dofile,"/idkos/system/update_boot.lua")
+  if not loaded then
+    writeLog("/idkos/update/check.log","update bootstrap load failed:\n"..tostring(updater))
+    return
+  end
+  if type(updater)=="function" then
+    local ok,reason=xpcall(updater,traceback)
+    if not ok then writeLog("/idkos/update/check.log","update bootstrap failed:\n"..tostring(reason)) end
+  end
+end
+
+local function kernelPanic(message,phase)
+  local loaded,panic=pcall(dofile,"/idkos/system/panic.lua")
+  if loaded and type(panic)=="function" then
+    return panic(message,{phase=phase or "kernel"})
+  end
+  error(tostring(message),0)
+end
+
+runUpdateBootstrap()
+
 local function injectTheme(source)
   local replacement=[[
 local ui = dofile("/idkos/system/ui_next.lua")
@@ -67,21 +108,13 @@ local function loadCore(path)
   return result
 end
 
-local function writeFallbackLog(message)
-  pcall(function()
-    local filesystem=require("filesystem")
-    local file=filesystem.open("/idkos/next-core.log","w")
-    if file then file:write(tostring(message):sub(1,16384)) file:close() end
-  end)
-end
-
 local core,nextReason=loadCore("/idkos/system/core_next.lua")
 local usingNext=core~=nil
 if not core then
   writeFallbackLog("next shell load failed:\n"..tostring(nextReason))
   local oldReason
   core,oldReason=loadCore("/idkos/system/core.lua")
-  if not core then error("both idk os shells failed: "..tostring(nextReason).."; "..tostring(oldReason),0) end
+  if not core then kernelPanic("both idk os shells failed: "..tostring(nextReason).."; "..tostring(oldReason),"shell load") end
 end
 
 local success,reason=xpcall(core.run,traceback)
@@ -99,4 +132,4 @@ if not success and usingNext then
   end
 end
 
-if not success then error(reason,0) end
+if not success then kernelPanic(reason,"shell runtime") end
