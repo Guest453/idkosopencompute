@@ -1,5 +1,5 @@
 return {
-  version = 7,
+  version = 8,
   files = {
     {source="src/init.lua", target="/init.lua"},
     {source="src/system/runtime.lua", target="/idkos/system/runtime.lua"},
@@ -12,6 +12,9 @@ return {
     {source="src/system/theme.lua", target="/idkos/system/theme.lua"},
     {source="src/system/shell_patch.lua", target="/idkos/system/shell_patch.lua"},
     {source="src/system/sprites.lua", target="/idkos/system/sprites.lua"},
+    {source="src/system/panic.lua", target="/idkos/system/panic.lua"},
+    {source="src/system/update_boot.lua", target="/idkos/system/update_boot.lua"},
+    {source="src/system/update_runner.lua", target="/idkos/system/update_runner.lua"},
     {source="src/apps/taskmanager.app/manifest.lua", target="/idkos/apps/taskmanager.app/manifest.lua"},
     {source="src/apps/taskmanager.app/main.lua", target="/idkos/apps/taskmanager.app/main.lua"},
     {source="src/apps/files.app/manifest.lua", target="/idkos/apps/files.app/manifest.lua"},
