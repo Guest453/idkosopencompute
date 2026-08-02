@@ -364,11 +364,11 @@ return function(packageSource)
       local data, reason = readFile(STAGE .. item.target)
       if not data then error("stage read " .. item.target .. ": " .. tostring(reason), 0) end
       log(string.format("apply %d/%d  %s", index, #package.entries, item.target))
-      local ok, applyReason = writeAtomic(item.target, data)
-      if not ok then error("apply " .. item.target .. ": " .. tostring(applyReason), 0) end
       applied[#applied + 1] = item.target
       local stateWriteOk, stateWriteReason = writeState(existed, applied)
       if not stateWriteOk then error("cannot update journal: " .. tostring(stateWriteReason), 0) end
+      local ok, applyReason = writeAtomic(item.target, data)
+      if not ok then error("apply " .. item.target .. ": " .. tostring(applyReason), 0) end
     end
 
     filesystem.remove(STATE)
