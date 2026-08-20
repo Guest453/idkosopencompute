@@ -123,5 +123,14 @@ return {
     details="displays a black-backed half-cell portrait with mismatched lenses, angular pose, and no gameplay.",
     path="store/apps/spamtontrash.app", package="spamton-trash-native-art",
     files={"manifest.lua","main.lua"}
+  },
+  {
+    id="srb2", name="SRB2: Greenflower Zone Act 1", version="1.0.0",
+    author="idk os port; artwork and level data (c) Sonic Team Junior",
+    category="games", icon="srb2", color=0x2e5cf0,
+    description="sonic robo blast 2's first level, ported",
+    details="srb2's own MAP01 geometry drawn by a doom-style bsp renderer, real srb2 sprite art and physics, and the real alacroix title screen. wasd to move, arrows to turn, space to jump, shift to spindash.",
+    path="store/apps/srb2.app", package="srb2-gfz1-port",
+    files={"manifest.lua","main.lua","title.lua","wad.lua","render.lua","sprites.lua","game.lua","GFZ1.wad","TITLE.wad"}
   }
 }
