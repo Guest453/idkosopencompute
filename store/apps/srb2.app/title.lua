@@ -62,6 +62,7 @@ function title.close()
 end
 
 -- blit one lump over the picture; byte 0 is transparent, as in the source art
+local ox, oy = 0, 0
 local function blit(px, W, H, name)
   local l = lumps[name]
   if not l then return end
@@ -72,6 +73,7 @@ local function blit(px, W, H, name)
   local y0 = byte(data, o + 7) + byte(data, o + 8) * 256
   if x0 >= 32768 then x0 = x0 - 65536 end
   if y0 >= 32768 then y0 = y0 - 65536 end
+  x0, y0 = x0 + ox, y0 + oy
   local base = o + 8
   for y = 1, h do
     local ty = y0 + y
@@ -110,7 +112,12 @@ local function whiten(px, W, H, amount)
 end
 
 --- compose one tic of the title screen into a flat W*H pixel buffer.
+-- the artwork is authored for a 112x70 picture, so on a roomier screen it is
+-- centred rather than pinned to the corner.
+title.ARTW, title.ARTH = 112, 70
 function title.draw(px, W, H, tic)
+  ox = math.max(0, math.floor((W - title.ARTW) / 2))
+  oy = math.max(0, math.floor((H - title.ARTH) / 2))
   for i = 1, W * H do px[i] = BLACK end
 
   blit(px, W, H, "EMBL")

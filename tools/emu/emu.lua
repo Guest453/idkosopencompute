@@ -105,25 +105,64 @@ function unicode.charWidth() return 1 end
 ----------------------------------------------------------------------- computer
 local clock = 0
 local computer = {}
+-- stock: two tier 3.5 sticks at 1024 KB, scaled 1.8 for the 64 bit vm.
+-- forked: two 1 GB sticks, scale 1.0.
+local FORK_RAM = os.getenv("IDKOS_FORK") ~= nil
+local TOTAL_MEMORY = FORK_RAM and (2048 * 1024 * 1024) or math.floor(2 * 1024 * 1024 * 1.8)
 function computer.uptime() return clock end
-function computer.freeMemory() return 1.6 * 1024 * 1024 end
-function computer.totalMemory() return 2 * 1024 * 1024 end
+function computer.freeMemory() return math.floor(TOTAL_MEMORY * 0.8) end
+function computer.totalMemory() return TOTAL_MEMORY end
 function computer.beep() end
 function computer.address() return "emu-computer" end
 function computer.pushSignal() end
 function computer.shutdown() error("shutdown", 0) end
 
 ---------------------------------------------------------------------------- gpu
+-- the gpu models opencomputers 1.8: page 0 is the screen, higher indices are
+-- video ram pages.  it also charges each call the same budget the real
+-- GraphicsCard.scala charges, so a script can report what a frame would really
+-- cost on a tier 3 card -- writes to a vram page are free, only the screen and
+-- the bitblt that pushes a page to it are billed.
+-- IDKOS_FORK=1 models the forked mod: bigger tier 3 screen, eight times cheaper
+-- gpu calls, far higher call budget and a nearly free bitblt.
+local FORK = os.getenv("IDKOS_FORK") ~= nil
 local MAXW, MAXH, MAXDEPTH = 160, 50, 8
+if FORK then MAXW, MAXH = 320, 100 end
 local gpu = {address = "emu-gpu", type = "gpu"}
 local screenAddr = "emu-screen"
 local W, H, DEPTH = 80, 25, MAXDEPTH
-local chars, fgs, bgs = {}, {}, {}
+local TIER = 2                                  -- zero based, so a tier 3 card
+
+-- GraphicsCard.scala
+local div = FORK and 8 or 1
+local setCosts = {1 / (64 * div), 1 / (128 * div), 1 / (256 * div)}
+local fillCosts = {1 / (32 * div), 1 / (64 * div), 1 / (128 * div)}
+local copyCosts = {1 / (16 * div), 1 / (32 * div), 1 / (64 * div)}
+local colorCosts = {1 / (32 * div), 1 / (64 * div), 1 / (128 * div)}
+local BITBLT_BASE = FORK and 0.05 or 0.5        -- Settings gpu.bitbltCost
+local CALL_BUDGET = FORK and 32.0 or 1.5        -- Settings computer.callBudgets[3]
+
+local budgetSpent = 0
+local function charge(cost) budgetSpent = budgetSpent + cost end
+
+local pages = {}
+local active = 0
+
+local function page(i)
+  if i == 0 then return pages[0] end
+  return pages[i]
+end
+
+local function newPage(w, h)
+  local p = {w = w, h = h, chars = {}, fgs = {}, bgs = {}, dirty = false}
+  for k = 1, w * h do p.chars[k], p.fgs[k], p.bgs[k] = " ", 0xffffff, 0x000000 end
+  return p
+end
+
 local curFg, curBg = 0xffffff, 0x000000
-local touched = 0
 
 local function clear()
-  for i = 1, W * H do chars[i], fgs[i], bgs[i] = " ", 0xffffff, 0x000000 end
+  pages[0] = newPage(W, H)
 end
 clear()
 
@@ -141,36 +180,143 @@ function gpu.getDepth() return DEPTH end
 function gpu.setDepth(d) DEPTH = d return true end
 function gpu.getForeground() return curFg, false end
 function gpu.getBackground() return curBg, false end
-function gpu.setForeground(c) local o = curFg curFg = c return o, false end
-function gpu.setBackground(c) local o = curBg curBg = c return o, false end
+function gpu.setForeground(c)
+  local o = curFg curFg = c
+  if active == 0 then charge(colorCosts[TIER + 1]) end
+  return o, false
+end
+function gpu.setBackground(c)
+  local o = curBg curBg = c
+  if active == 0 then charge(colorCosts[TIER + 1]) end
+  return o, false
+end
+
 function gpu.set(x, y, value)
+  local p = page(active)
+  if not p then return false end
   x, y = math.floor(x), math.floor(y)
-  if y < 1 or y > H then return false end
+  if y < 1 or y > p.h then return false end
   local n = unicode.len(value)
   for i = 1, n do
     local px = x + i - 1
-    if px >= 1 and px <= W then
-      local idx = (y - 1) * W + px
-      chars[idx], fgs[idx], bgs[idx] = unicode.sub(value, i, i), curFg, curBg
-      touched = touched + 1
+    if px >= 1 and px <= p.w then
+      local idx = (y - 1) * p.w + px
+      p.chars[idx], p.fgs[idx], p.bgs[idx] = unicode.sub(value, i, i), curFg, curBg
     end
   end
+  p.dirty = true
+  if active == 0 then charge(setCosts[TIER + 1]) end
   return true
 end
+
 function gpu.fill(x, y, w, h, ch)
+  local p = page(active)
+  if not p then return false end
   x, y, w, h = math.floor(x), math.floor(y), math.floor(w), math.floor(h)
-  for py = math.max(1, y), math.min(H, y + h - 1) do
-    for px = math.max(1, x), math.min(W, x + w - 1) do
-      local idx = (py - 1) * W + px
-      chars[idx], fgs[idx], bgs[idx] = ch, curFg, curBg
-      touched = touched + 1
+  for py = math.max(1, y), math.min(p.h, y + h - 1) do
+    for px = math.max(1, x), math.min(p.w, x + w - 1) do
+      local idx = (py - 1) * p.w + px
+      p.chars[idx], p.fgs[idx], p.bgs[idx] = ch, curFg, curBg
     end
   end
+  p.dirty = true
+  if active == 0 then charge(fillCosts[TIER + 1]) end
   return true
 end
-function gpu.copy() return true end
+
+function gpu.copy(x, y, w, h, tx, ty)
+  if active == 0 then charge(copyCosts[TIER + 1]) end
+  return true
+end
+
 function gpu.getPaletteColor(i) return i end
 function gpu.setPaletteColor(i, v) return v end
+
+-- video ram pages
+function gpu.totalMemory() return MAXW * MAXH * 3 end
+function gpu.freeMemory()
+  local used = 0
+  for i, p in pairs(pages) do if i ~= 0 then used = used + p.w * p.h end end
+  return gpu.totalMemory() - used
+end
+function gpu.allocateBuffer(w, h)
+  w = math.floor(w or W) h = math.floor(h or H)
+  if w < 1 or h < 1 then return nil, "invalid size" end
+  if w * h > gpu.freeMemory() then return nil, "not enough video memory" end
+  local i = 1
+  while pages[i] do i = i + 1 end
+  pages[i] = newPage(w, h)
+  return i
+end
+function gpu.freeBuffer(i)
+  if i == 0 or not pages[i] then return false end
+  pages[i] = nil
+  if active == i then active = 0 end
+  return true
+end
+function gpu.freeAllBuffers()
+  local n = 0
+  for i in pairs(pages) do if i ~= 0 then pages[i] = nil n = n + 1 end end
+  active = 0
+  return n
+end
+function gpu.getActiveBuffer() return active end
+function gpu.setActiveBuffer(i)
+  i = math.floor(i or 0)
+  if i ~= 0 and not pages[i] then return nil, "invalid buffer" end
+  local old = active
+  active = i
+  return old
+end
+function gpu.getBufferSize(i)
+  local p = page(i)
+  if not p then return nil, "invalid buffer" end
+  return p.w, p.h
+end
+function gpu.bitblt(dst, col, row, w, h, src, fromCol, fromRow)
+  dst = math.floor(dst or 0)
+  src = math.floor(src or active)
+  local d, s = page(dst), page(src)
+  if not d or not s then return nil, "invalid buffer" end
+  col = math.floor(col or 1) row = math.floor(row or 1)
+  w = math.floor(w or d.w) h = math.floor(h or d.h)
+  fromCol = math.floor(fromCol or 1) fromRow = math.floor(fromRow or 1)
+  for y = 0, h - 1 do
+    for x = 0, w - 1 do
+      local sx, sy = fromCol + x, fromRow + y
+      local dx, dy = col + x, row + y
+      if sx >= 1 and sx <= s.w and sy >= 1 and sy <= s.h
+         and dx >= 1 and dx <= d.w and dy >= 1 and dy <= d.h then
+        local si = (sy - 1) * s.w + sx
+        local di = (dy - 1) * d.w + dx
+        d.chars[di], d.fgs[di], d.bgs[di] = s.chars[si], s.fgs[si], s.bgs[si]
+      end
+    end
+  end
+  -- determineBitbltBudgetCost: page -> screen costs by area, page -> page is free
+  if dst == 0 and src ~= 0 then
+    charge(s.dirty and (BITBLT_BASE * 2 ^ TIER * (s.w * s.h) / (MAXW * MAXH)) or 0.001)
+    s.dirty = false
+  end
+  d.dirty = true
+  return true
+end
+
+-- IDKOS_NO_VRAM hides the 1.8 page api, to compare against the old direct path
+if os.getenv("IDKOS_NO_VRAM") then
+  gpu.allocateBuffer, gpu.setActiveBuffer, gpu.bitblt = nil, nil, nil
+  gpu.freeBuffer, gpu.freeAllBuffers, gpu.getActiveBuffer = nil, nil, nil
+  gpu.getBufferSize, gpu.totalMemory, gpu.freeMemory = nil, nil, nil
+end
+
+-- budget reporting for scripts
+function gpu.__budget() return budgetSpent, CALL_BUDGET end
+function gpu.__resetBudget() budgetSpent = 0 end
+function gpu.__buffers()
+  local n = 0
+  for i in pairs(pages) do if i ~= 0 then n = n + 1 end end
+  return n
+end
 
 ------------------------------------------------------------------- component api
 local screen = {address = screenAddr, type = "screen"}
@@ -246,11 +392,12 @@ local core -- set after load
 local function dumpFrame(name)
   local out = {}
   out[#out + 1] = string.format("%d %d", W, H)
+  local scr = pages[0]
   for y = 1, H do
     local row = {}
     for x = 1, W do
       local i = (y - 1) * W + x
-      row[#row + 1] = string.format("%06x,%06x,%s", fgs[i] or 0xffffff, bgs[i] or 0, chars[i] or " ")
+      row[#row + 1] = string.format("%06x,%06x,%s", scr.fgs[i] or 0xffffff, scr.bgs[i] or 0, scr.chars[i] or " ")
     end
     out[#out + 1] = table.concat(row, "\t")
   end
@@ -312,6 +459,7 @@ emu.core = core
 
 -- the driver needs the shot hook to see the composited screen, so expose it.
 emu.dump = dumpFrame
+emu.gpu = gpu
 
 local ok, err = pcall(core.run)
 if not ok then io.stderr:write("core.run: " .. tostring(err) .. "\n") end

@@ -10,7 +10,14 @@ return function(app)
   local manifest = app.apps and app.apps().srb2
   local base = manifest and manifest.path
 
-  local win = app.window{ title = "SRB2: Greenflower Zone Act 1", width = 114, height = 38, bg = 0x000000 }
+  -- size the picture from the screen first, then ask for a window that fits it
+  -- exactly, so a big screen does not leave the game in a corner of a black box.
+  local screenW, screenH = app.screen()
+  local PIXEL_BUDGET = 20000
+  local wantW = math.max(40, math.min(screenW - 2, 160))
+  local wantRows = math.max(8, math.min(screenH - 5, math.floor(PIXEL_BUDGET / (2 * wantW))))
+  local win = app.window{ title = "SRB2: Greenflower Zone Act 1",
+                          width = wantW, height = wantRows + 3, bg = 0x000000 }
 
   local function fatal(msg)
     while true do
@@ -33,19 +40,36 @@ return function(app)
   ------------------------------------------------------------------ geometry
   -- one canvas submission is capped at 4096 cells, so the picture is sized to
   -- the largest 2:1-ish view that fits both the window and that budget.
+  -- the picture is bounded by lua, not by the gpu: every logical pixel costs a
+  -- bsp lookup, so past roughly twenty thousand of them the renderer, not the
+  -- call budget, is what sets the frame rate.
   local ww, wh = win:size()
-  local VIEWW = math.min(114, ww)
-  local ROWS = math.min(wh - 2, math.floor(4096 / VIEWW))
+  local VIEWW = math.min(ww, 160)
+  local ROWS = math.min(wh - 2, math.floor(PIXEL_BUDGET / (2 * VIEWW)))
   if ROWS < 8 then fatal("this screen is too small; try a larger display mode") end
-  local VIEWH = ROWS * 2
-  local HUDY = ROWS + 1
 
-  local px = {}
-  for i = 1, VIEWW * VIEWH do px[i] = 0 end
   local fgp, bgp, glyphs = {}, {}, {}
   local BLOCK = "\u{2580}"
-  for i = 1, VIEWW * ROWS do fgp[i], bgp[i], glyphs[i] = 0, 0, BLOCK end
   local canvas = { backgrounds = bgp, foregrounds = fgp, glyphs = glyphs }
+
+  -- older builds of idk os cap a single canvas submission, so settle on the
+  -- largest picture this one actually accepts rather than assuming a number.
+  local function fits(rows)
+    for i = 1, VIEWW * rows do
+      if not glyphs[i] then fgp[i], bgp[i], glyphs[i] = 0, 0, BLOCK end
+    end
+    win:reset()
+    local ok = win:canvas(1, 1, VIEWW, rows, canvas)
+    win:reset()
+    return ok ~= nil
+  end
+  while ROWS >= 8 and not fits(ROWS) do ROWS = math.floor(ROWS / 2) end
+  if ROWS < 8 then fatal("this screen cannot show the game") end
+
+  local VIEWH = ROWS * 2
+  local HUDY = ROWS + 1
+  local px = {}
+  for i = 1, VIEWW * VIEWH do px[i] = 0 end
 
   local function present()
     win:reset()
