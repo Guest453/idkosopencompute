@@ -13,7 +13,12 @@ return function(app)
   -- size the picture from the screen first, then ask for a window that fits it
   -- exactly, so a big screen does not leave the game in a corner of a black box.
   local screenW, screenH = app.screen()
-  local PIXEL_BUDGET = 20000
+  -- how many logical pixels the renderer may draw. every one costs a bsp
+  -- lookup, and on real opencomputers hardware that, not the gpu, sets the
+  -- frame rate. adjustable in game with - and =.
+  local BUDGETS = { 4000, 5760, 7840, 10240, 16000, 20000 }
+  local quality = 3
+  local PIXEL_BUDGET = BUDGETS[quality]
   local wantW = math.max(40, math.min(screenW - 2, 160))
   local wantRows = math.max(8, math.min(screenH - 5, math.floor(PIXEL_BUDGET / (2 * wantW))))
   local win = app.window{ title = "SRB2: Greenflower Zone Act 1",

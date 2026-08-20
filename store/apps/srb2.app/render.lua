@@ -26,13 +26,18 @@ local skyRow, noise
 local wallCacheR, wallCacheG, wallCacheB
 
 local FOGR, FOGG, FOGB = 150, 180, 255
-local MAXFOG = 3000
+local MAXFOG = 4200
 
+-- doom's light diminishing, which is what makes a flat-shaded floor read as a
+-- receding surface at all: bright close up, falling off quickly, with a little
+-- aerial haze further out so distant geometry separates from near geometry.
 local function mix(r, g, b, d)
-  local f = d / MAXFOG
-  if f > 1 then f = 1 elseif f < 0 then f = 0 end
-  local mf = 1 - f
-  return r * mf + FOGR * f, g * mf + FOGG * f, b * mf + FOGB * f
+  local f = 1.30 - d * 0.0009
+  if f > 1.30 then f = 1.30 elseif f < 0.42 then f = 0.42 end
+  local h = d / MAXFOG
+  if h > 0.5 then h = 0.5 elseif h < 0 then h = 0 end
+  local mf = 1 - h
+  return (r * f) * mf + FOGR * h, (g * f) * mf + FOGG * h, (b * f) * mf + FOGB * h
 end
 
 local function pack(r, g, b)
@@ -73,6 +78,7 @@ local function bspWalk(lv, cam, rx, ry)
 
   local count = 0
   local lastR, lastG, lastB = 137, 76, 28
+  local bestC = 1
 
   -- nearest seg of one leaf that the ray crosses between two ray parameters
   local function scanSegs(leaf, t0, t1)
@@ -80,6 +86,7 @@ local function bspWalk(lv, cam, rx, ry)
     local first = packed % MAXSEG
     local n = floor(packed / MAXSEG)
     local bestT, bestPF = nil, nil
+    bestC = 1
     for i = first, first + n - 1 do
       local pv = sv[i]
       if pv then
@@ -92,15 +99,22 @@ local function bspWalk(lv, cam, rx, ry)
           local t = ((ax - cx) * sdy - (ay - cy) * sdx) / den
           if t > t0 + 0.03 and t <= t1 + 0.03 and (not bestT or t < bestT) then
             local u = ((ax - cx) * ry - (ay - cy) * rx) / den
-            if u >= 0 and u <= 1 then bestT, bestPF = t, sf[i] end
+            if u >= 0 and u <= 1 then
+              bestT, bestPF = t, sf[i]
+              local adx = sdx < 0 and -sdx or sdx
+              local ady = sdy < 0 and -sdy or sdy
+              -- doom brightens east-west walls and darkens north-south ones so
+              -- that corners read even with no texture on them
+              bestC = 1 + 0.22 * (adx - ady) / (adx + ady + 0.0001)
+            end
           end
         end
       end
     end
-    return bestT, bestPF
+    return bestT, bestPF, bestC
   end
 
-  local function wallColor(pf)
+  local function wallColor(pf, contrast)
     local fsec = pf % MAXSEC
     local slot = floor(pf / SLOTDIV)
     local key = slot * MAXSEC + fsec
@@ -113,7 +127,8 @@ local function bspWalk(lv, cam, rx, ry)
       wallCacheG[key] = floor(base / 256) % 256 * lfv
       wallCacheB[key] = base % 256 * lfv
     end
-    return r, wallCacheG[key], wallCacheB[key]
+    contrast = contrast or 1
+    return r * contrast, wallCacheG[key] * contrast, wallCacheB[key] * contrast
   end
 
   local function emit(t, sector, solid, r, g, b)
@@ -124,42 +139,53 @@ local function bspWalk(lv, cam, rx, ry)
     cwr[count], cwg[count], cwb[count] = r, g, b
   end
 
-  local stk = { lv.nnodes, 0 }
-  local sp = 2
-  local pending, pendingT = nil, 0
+  -- each stack entry is a region: the node, and the ray parameters at which
+  -- the ray enters and leaves it. carrying the exit is what keeps leaves in
+  -- front-to-back order -- bounding a child's split by maxd instead lets it be
+  -- pushed at a parameter beyond its parent's extent.
+  local stk = { lv.nnodes, 0, maxd }
+  local sp = 3
+  local pending, pendingT, pendingExit = nil, 0, 0
   local stopped = false
   while sp > 0 and not stopped do
+    local t1 = stk[sp] sp = sp - 1
     local t0 = stk[sp] sp = sp - 1
     local node = stk[sp] sp = sp - 1
     if node < 0x8000 then
+      -- f(t) = side + t*den is the ray's signed position against this
+      -- partition. what matters is the side it occupies where it enters this
+      -- region, at t0, not the side the camera happens to be on.
       local side = (cx - npx[node]) * ndy[node] - (cy - npy[node]) * ndx[node]
       local den = rx * ndy[node] - ry * ndx[node]
       local c1, c2 = nc1[node], nc2[node]
-      local near = (side > 0) and c1 or c2
-      local far = (side > 0) and c2 or c1
-      if den == 0 then
-        sp = sp + 1 stk[sp] = near
-        sp = sp + 1 stk[sp] = t0
-      else
+      local f0 = side + t0 * den
+      local entryChild = (f0 > 0) and c1 or c2
+      local otherChild = (f0 > 0) and c2 or c1
+      local split
+      if den ~= 0 then
         local t = -side / den
-        if t <= t0 + 0.01 or t >= maxd then
-          sp = sp + 1 stk[sp] = near
-          sp = sp + 1 stk[sp] = t0
-        else
-          sp = sp + 1 stk[sp] = far
-          sp = sp + 1 stk[sp] = t
-          sp = sp + 1 stk[sp] = near
-          sp = sp + 1 stk[sp] = t0
-        end
+        if t > t0 + 0.01 and t < t1 - 0.01 then split = t end
+      end
+      if split then
+        sp = sp + 1 stk[sp] = otherChild
+        sp = sp + 1 stk[sp] = split
+        sp = sp + 1 stk[sp] = t1
+        sp = sp + 1 stk[sp] = entryChild
+        sp = sp + 1 stk[sp] = t0
+        sp = sp + 1 stk[sp] = split
+      else
+        sp = sp + 1 stk[sp] = entryChild
+        sp = sp + 1 stk[sp] = t0
+        sp = sp + 1 stk[sp] = t1
       end
     else
       local leaf = node - 0x7FFF
       if not pending then
         emit(0, us[leaf], false, lastR, lastG, lastB)
       else
-        local hitT, hitPF = scanSegs(pending, pendingT, t0)
+        local hitT, hitPF, hitC = scanSegs(pending, pendingT, pendingExit)
         if hitPF then
-          local r, g, b = wallColor(hitPF)
+          local r, g, b = wallColor(hitPF, hitC)
           lastR, lastG, lastB = r, g, b
           if floor(hitPF / SOLIDBIT) % 2 == 1 then
             emit(hitT, csec[count], true, r, g, b)
@@ -171,13 +197,13 @@ local function bspWalk(lv, cam, rx, ry)
           emit(t0, us[leaf], false, lastR, lastG, lastB)
         end
       end
-      if not stopped then pending, pendingT = leaf, t0 end
+      if not stopped then pending, pendingT, pendingExit = leaf, t0, t1 end
     end
   end
   if not stopped and pending then
-    local hitT, hitPF = scanSegs(pending, pendingT, maxd)
+    local hitT, hitPF, hitC = scanSegs(pending, pendingT, pendingExit)
     if hitPF then
-      local r, g, b = wallColor(hitPF)
+      local r, g, b = wallColor(hitPF, hitC)
       emit(hitT, csec[count], true, r, g, b)
       stopped = true
     end
@@ -209,8 +235,10 @@ local function renderFrame(lv, cam, sprites, tick)
     rx, ry = rx / len, ry / len
     bspWalk(lv, cam, rx, ry)
 
-    local j = 1
     for y = 1, VIEWH do
+      -- the nearest visible surface is not monotonic down the column, so the
+      -- crossing cursor has to start over for each row rather than carry over.
+      local j = 1
       local tanh = (y - 0.5 - CY) / FOCAL
       local idx = (y - 1) * VIEWW + col
       while true do
@@ -269,16 +297,28 @@ local function renderFrame(lv, cam, sprites, tick)
         local x0 = halfw + sd * scale - wpx / 2
         local ytop = CY - (spr.z + spr.h - eyeZ) * scale
         local bw, bh, rows = art.bw, art.bh, art.rows
-        local pxstep, pystep = wpx / bw, hpx / bh
-        for py = 0, bh - 1 do
-          local row = floor(ytop + (py + 0.5) * pystep) + 1
-          if row >= 1 and row <= VIEWH then
+        -- walk the destination pixels and sample back into the sprite. going
+        -- the other way leaves holes wherever the sprite is magnified, which is
+        -- exactly when it is closest and most visible.
+        local y0 = ytop
+        local r0 = floor(y0) + 1
+        local r1 = floor(y0 + hpx)
+        if r0 < 1 then r0 = 1 end
+        if r1 > VIEWH then r1 = VIEWH end
+        local c0 = floor(x0) + 1
+        local c1 = floor(x0 + wpx)
+        if c0 < 1 then c0 = 1 end
+        if c1 > VIEWW then c1 = VIEWW end
+        for row = r0, r1 do
+          local sy = floor((row - 0.5 - y0) * bh / hpx) + 1
+          if sy < 1 then sy = 1 elseif sy > bh then sy = bh end
+          local line = rows[sy]
+          if line then
             local rowbase = (row - 1) * VIEWW
-            local line = rows[py + 1]
-            for sxi = 0, bw - 1 do
-              local c = floor(x0 + (sxi + 0.5) * pxstep) + 1
-              if c >= 1 and c <= VIEWW then
-                local v = line:byte(sxi + 1)
+            for c = c0, c1 do
+              local sx = floor((c - 0.5 - x0) * bw / wpx) + 1
+              if sx >= 1 and sx <= bw then
+                local v = line:byte(sx)
                 if v and v > 0 then
                   local i = rowbase + c
                   if fw < depth[i] then px[i] = pal[v] depth[i] = fw end
@@ -309,6 +349,25 @@ function render.frame(lv, cam, sprites, tick)
 end
 
 function render.size() return VIEWW, VIEWH end
+
+-- development aid: the ordered sector crossings one screen column resolved
+function render.debugColumn(lv, cam, col)
+  local fx = cos(cam.yaw)
+  local fy = -sin(cam.yaw)
+  local sx, sy = -fy, fx
+  local tanv = (col - 0.5 - VIEWW / 2) / FOCAL
+  local rx, ry = fx + sx * tanv, fy + sy * tanv
+  local len = sqrt(rx * rx + ry * ry)
+  bspWalk(lv, cam, rx / len, ry / len)
+  local out = {}
+  for i = 1, ccount do
+    out[i] = { t = ct[i], sec = csec[i], solid = csolid[i] }
+  end
+  return out
+end
+
+-- development aid: the per-pixel distances the last frame resolved
+function render.depthBuffer() return depth end
 
 function render.init(width, height, fovDegrees)
   VIEWW = width
