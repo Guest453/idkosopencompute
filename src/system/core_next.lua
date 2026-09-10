@@ -123,7 +123,7 @@ if type(cells) ~= "table" or type(cells.backgrounds) ~= "table" then return nil,
 local maxWidth, maxHeight = math.max(0, self.width - x + 1), math.max(0, self.height - y)
 width, height = math.min(math.max(0, width), maxWidth), math.min(math.max(0, height), maxHeight)
 local count = width * height
-if x < 1 or y < 1 or count < 1 or count > 4096 or self.canvasCells + count > 4096 then
+if x < 1 or y < 1 or count < 1 or count > 65536 or self.canvasCells + count > 65536 then
 return nil, "canvas exceeds window bounds"
 end
 local backgrounds, foregrounds, glyphs = {}, {}, {}
