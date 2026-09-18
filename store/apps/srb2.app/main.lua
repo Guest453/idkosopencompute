@@ -144,9 +144,29 @@ return function(app)
   local K_W, K_A, K_S, K_D = 17, 30, 31, 32
   local K_SPACE, K_LSHIFT, K_RSHIFT, K_R, K_ESC = 57, 42, 54, 19, 1
   local K_LEFT, K_RIGHT = 203, 205
+  local K_MINUS, K_EQUALS = 12, 13
 
   local input = { fwd = false, back = false, left = false, right = false,
                   turnL = false, turnR = false, jump = false, spin = false }
+
+  -- re-grade the pixel budget in game: fewer logical pixels for slower
+  -- machines, more for fat ones. the window keeps its size; only the picture
+  -- inside it shrinks or grows.
+  local qmsg, qmsgT = "", 0
+
+  local function setQuality(q)
+    if q < 1 then q = 1 elseif q > #BUDGETS then q = #BUDGETS end
+    if q == quality then return end
+    local rows = math.min(wh - 2, math.floor(BUDGETS[q] / (2 * VIEWW)))
+    if rows < 8 or rows == ROWS then return end
+    quality = q
+    ROWS, VIEWH, HUDY = rows, rows * 2, rows + 1
+    fgp, bgp, glyphs = {}, {}, {}
+    canvas.foregrounds, canvas.backgrounds, canvas.glyphs = fgp, bgp, glyphs
+    for i = 1, VIEWW * ROWS do fgp[i], bgp[i], glyphs[i] = 0, 0, BLOCK end
+    render.init(VIEWW, VIEWH, 90)
+    qmsg, qmsgT = "quality " .. q .. " (" .. BUDGETS[q] .. " px)", 2
+  end
 
   local function setKey(code, down)
     if code == K_W then input.fwd = down
@@ -184,15 +204,18 @@ return function(app)
     present()
 
     local hud = game.hud()
+    if qmsgT > 0 then qmsgT = qmsgT - 0.016 end
     win:text(1, HUDY, string.format("RINGS %-4d  TIME %-6s  LIVES %-3d %s",
       hud.rings, hud.time, hud.lives, hud.msgT > 0 and hud.msg or ""), 0xf8e040, 0x102040)
-    win:text(1, HUDY + 1, "wasd move   arrows turn   space jump   shift spindash   r reset   esc quit",
-      0x9ba4b3, 0x102040)
+    win:text(1, HUDY + 1, string.format("wasd move  arrows turn  space jump  shift spindash  -/= quality %s %s",
+      qmsgT > 0 and qmsg or "", hud.state == "die" and "" or " r reset  esc quit"), 0x9ba4b3, 0x102040)
 
     local name, _, char, code = app.pull(0.01)
     if name == "key_down" then
       if code == K_ESC then running = false
       elseif code == K_R then game.resetLevel()
+      elseif code == K_MINUS then setQuality(quality - 1)
+      elseif code == K_EQUALS then setQuality(quality + 1)
       else setKey(code, true) end
     elseif name == "key_up" then
       setKey(code, false)

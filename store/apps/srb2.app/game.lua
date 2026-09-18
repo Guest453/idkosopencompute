@@ -12,7 +12,8 @@ local JUMPZ = 9.75
 local RADIUS = 14
 local HEIGHT = 26
 local CAMDIST = 160     -- srb2 cam_dist
-local CAMHEIGHT = 40    -- srb2 cam_height
+local CAMHEIGHT = 8     -- camera hovers this high; the renderer's EYE (41 above
+                        -- the camera) lands at the srb2 eye height above the feet
 local VIEWDIST = 2600
 
 local SPRITES = {
@@ -133,13 +134,30 @@ function game.floorAt(x, y)
   local fofs = lv.fofs
   for i = 1, #fofs do
     local f = fofs[i]
-    if f.solid and f.top > fh and x >= f.minx - 2 and x <= f.maxx + 2
-       and y >= f.miny - 2 and y <= f.maxy + 2 then
-      local dx, dy = x - f.cx, y - f.cy
-      if dx * dx + dy * dy <= f.rad * f.rad then fh = f.top end
-    end
+    if f.solid and f.top > fh and game.insideFof(f, x, y) then fh = f.top end
   end
   return fh
+end
+
+-- point inside a floor-over-floor slab.  the slab's tagged lines form an edge
+-- soup, tested with the even-odd rule; degenerate groups (fewer than three
+-- edges) fall back to the old bounding-circle approximation.
+function game.insideFof(f, x, y)
+  if x < f.minx - 2 or x > f.maxx + 2 or y < f.miny - 2 or y > f.maxy + 2 then return false end
+  local ex, ey = f.ex, f.ey
+  local n = #ex
+  if n < 6 then
+    local dx, dy = x - f.cx, y - f.cy
+    return dx * dx + dy * dy <= f.rad * f.rad
+  end
+  local inside = false
+  for i = 1, n, 2 do
+    local y1, y2 = ey[i], ey[i + 1]
+    if (y1 > y) ~= (y2 > y) then
+      if x < ex[i] + (y - y1) * (ex[i + 1] - ex[i]) / (y2 - y1) then inside = not inside end
+    end
+  end
+  return inside
 end
 
 local function collide(px, py, r)
@@ -186,6 +204,48 @@ local function collide(px, py, r)
   end
   p.x, p.y = px, py
   return hit
+end
+
+-- push a point out of the solid-line blockmap without touching any velocity.
+-- used to keep the chase camera on the player's side of walls: the bsp walker
+-- renders garbage when the camera ends up inside or behind one, which is what
+-- made the ground seem to break at corners and after springs.
+local function pushOut(px, py, r)
+  local lv = game.level
+  local CS = lv.cellSize
+  local bax, bay, bbx, bby = lv.bax, lv.bay, lv.bbx, lv.bby
+  local cells = lv.cells
+  local cx, cy = math.floor(px / CS), math.floor(py / CS)
+  for _ = 1, 3 do
+    for dx = -1, 1 do
+      local col = cells[cx + dx]
+      if col then
+        for dy = -1, 1 do
+          local cell = col[cy + dy]
+          if cell then
+            for i = 1, #cell do
+              local li = cell[i]
+              local ax, ay = bax[li], bay[li]
+              local ex, ey = bbx[li] - ax, bby[li] - ay
+              local len2 = ex * ex + ey * ey
+              if len2 > 0 then
+                local t = ((px - ax) * ex + (py - ay) * ey) / len2
+                if t < 0 then t = 0 elseif t > 1 then t = 1 end
+                local qx, qy = ax + ex * t, ay + ey * t
+                local ddx, ddy = px - qx, py - qy
+                local d2 = ddx * ddx + ddy * ddy
+                if d2 < r * r and d2 > 0.0001 then
+                  local d = math.sqrt(d2)
+                  px, py = qx + ddx / d * r, qy + ddy / d * r
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  return px, py
 end
 
 function game.damage(from)
@@ -392,8 +452,7 @@ function game.tick(input)
   for i = 1, #lv.fofs do
     local f = lv.fofs[i]
     if f.solid and f.top >= fh then
-      local m = (p.x - f.cx) * (p.x - f.cx) + (p.y - f.cy) * (p.y - f.cy)
-      if m <= f.rad * f.rad and p.x >= f.minx - 2 and p.x <= f.maxx + 2 and p.y >= f.miny - 2 and p.y <= f.maxy + 2 then
+      if game.insideFof(f, p.x, p.y) then
         local prev = p.z
         if prev >= f.top - 0.5 and p.z + p.momz <= f.top then
           fh = f.top
@@ -464,7 +523,8 @@ function game.tick(input)
       end
     elseif e.k == "springDY" or e.k == "springDR" then
       if touch(p, e) then
-        local a = e.ang * 6.283 / 65536
+        -- mapthing angles are degrees (0-359), not binary radians
+        local a = math.rad(e.ang % 360)
         local sp = e.k == "springDY" and 16 or 22
         p.vx = math.cos(a) * sp
         p.vy = math.sin(a) * sp
@@ -473,7 +533,7 @@ function game.tick(input)
       end
     elseif e.k == "springHY" or e.k == "springHR" then
       if touch(p, e) then
-        local a = e.ang * 6.283 / 65536
+        local a = math.rad(e.ang % 360)
         local sp = e.k == "springHY" and 30 or 38
         p.vx = math.cos(a) * sp
         p.vy = math.sin(a) * sp
@@ -574,17 +634,23 @@ function game.tick(input)
     end
   end
 
-  game.time = game.time + TIC
-
   -- camera follow
-  -- srb2's chase camera: behind the player along the view angle, eased in
+  -- srb2's chase camera: behind the player along the view angle, eased in,
+  -- then pushed out of the blockmap so it can never end up inside or behind
+  -- a wall (rendering from there is what looked like the ground breaking).
   local cam = game.cam
   local wantx = p.x - math.cos(cam.yaw) * CAMDIST
   local wanty = p.y + math.sin(cam.yaw) * CAMDIST
   local fh = game.floorAt(wantx, wanty)
-  cam.x = cam.x + (wantx - cam.x) * 0.3
-  cam.y = cam.y + (wanty - cam.y) * 0.3
+  cam.x, cam.y = pushOut(cam.x + (wantx - cam.x) * 0.3, cam.y + (wanty - cam.y) * 0.3, 16)
   local wantz = math.max(p.z, fh) + CAMHEIGHT
+  -- keep the camera between the floor it hovers over and the ceiling above it
+  local csec = game.sectorAt(cam.x, cam.y)
+  local cfh = lv.sfh[csec]
+  local cch = lv.sch[csec]
+  if cfh and wantz < cfh + 8 then wantz = cfh + 8 end
+  if cch and wantz > cch - 8 then wantz = cch - 8 end
+  if wantz < p.z + 8 then wantz = p.z + 8 end
   cam.z = cam.z + (wantz - cam.z) * 0.3
 end
 

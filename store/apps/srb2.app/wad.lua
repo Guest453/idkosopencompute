@@ -236,33 +236,53 @@ function wad.load(path)
   -- each group becomes one convex-ish blob with its control sector's heights.
   local fofs = {}
   do
+    -- srb2 fof lines carry the control sector on their FRONT side (back is
+    -- none in this trimmed wad), and most slabs carry a single marker line.
+    -- the slab's real outline is the control sector's whole boundary, so a
+    -- second pass collects an edge from every line touching it either side —
+    -- most gfz1 ledges turn out to be triangles, which a bounding circle
+    -- covered far too generously (the ground broke underfoot).
     local groups = {}
     for i = 1, nlines do
       local special = lineSpecial[i]
       if FOF_SPECIALS[special] then
         local fsec = lf[i] % MAXSEC
         if fsec > 0 then
-          local key = special * MAXSEC + fsec
-          local g = groups[key]
-          if not g then g = { special = special, sec = fsec, n = 0, minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9, sx = 0, sy = 0 } groups[key] = g end
-          local packed = lv[i]
-          for _, vi in ipairs({ packed % MAXV, math.floor(packed / MAXV) }) do
-            local x, y = vx[vi], vy[vi]
-            if x then
-              if x < g.minx then g.minx = x end
-              if x > g.maxx then g.maxx = x end
-              if y < g.miny then g.miny = y end
-              if y > g.maxy then g.maxy = y end
-              g.sx, g.sy, g.n = g.sx + x, g.sy + y, g.n + 1
-            end
-          end
+          local g = groups[fsec]
+          if not g then g = { sec = fsec, n = 0, minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9, sx = 0, sy = 0 } groups[fsec] = g end
+          if special == 121 then g.water = true end
+        end
+      end
+    end
+    for i = 1, nlines do
+      local g = groups[lf[i] % MAXSEC] or groups[math.floor(lf[i] / MAXSEC) % MAXSEC]
+      if g then
+        local packed = lv[i]
+        local v1, v2 = packed % MAXV, math.floor(packed / MAXV)
+        local x1, y1 = vx[v1], vy[v1]
+        local x2, y2 = vx[v2], vy[v2]
+        if x1 and x2 then
+          g.ex = g.ex or {}
+          g.ey = g.ey or {}
+          local en = #g.ex
+          g.ex[en + 1], g.ey[en + 1] = x1, y1
+          g.ex[en + 2], g.ey[en + 2] = x2, y2
+          if x1 < g.minx then g.minx = x1 end
+          if x1 > g.maxx then g.maxx = x1 end
+          if x2 < g.minx then g.minx = x2 end
+          if x2 > g.maxx then g.maxx = x2 end
+          if y1 < g.miny then g.miny = y1 end
+          if y1 > g.maxy then g.maxy = y1 end
+          if y2 < g.miny then g.miny = y2 end
+          if y2 > g.maxy then g.maxy = y2 end
+          g.sx, g.sy, g.n = g.sx + x1 + x2, g.sy + y1 + y2, g.n + 2
         end
       end
     end
     for _, g in pairs(groups) do
       local sec = sectors[g.sec]
       if sec and g.n > 0 then
-        local water = g.special == 121
+        local water = g.water
         fofs[#fofs + 1] = {
           btm = sec.fh, top = sec.ch,
           topcol = water and 0x1E3E82 or sec.fcol,
@@ -271,6 +291,7 @@ function wad.load(path)
           minx = g.minx, miny = g.miny, maxx = g.maxx, maxy = g.maxy,
           cx = g.sx / g.n, cy = g.sy / g.n,
           rad = math.max(g.maxx - g.minx, g.maxy - g.miny) / 2 + 24,
+          ex = g.ex, ey = g.ey,
         }
       end
     end

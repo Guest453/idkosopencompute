@@ -125,7 +125,7 @@ return {
     files={"manifest.lua","main.lua"}
   },
   {
-    id="srb2", name="SRB2: Greenflower Zone Act 1", version="1.0.0",
+    id="srb2", name="SRB2: Greenflower Zone Act 1", version="1.1.0",
     author="idk os port; artwork and level data (c) Sonic Team Junior",
     category="games", icon="srb2", color=0x2e5cf0,
     description="sonic robo blast 2's first level, ported",

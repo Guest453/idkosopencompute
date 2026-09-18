@@ -21,6 +21,7 @@ local EYE = 41              -- srb2 camera height above the player's feet
 -- module state, all preallocated: opencomputers cannot afford per-frame garbage
 local px, depth
 local ct, csec, csolid, cwr, cwg, cwb, ccount
+local segT, segPF, segC
 local fgp, bgp, gly
 local skyRow, noise
 local wallCacheR, wallCacheG, wallCacheB
@@ -78,15 +79,16 @@ local function bspWalk(lv, cam, rx, ry)
 
   local count = 0
   local lastR, lastG, lastB = 137, 76, 28
-  local bestC = 1
 
-  -- nearest seg of one leaf that the ray crosses between two ray parameters
-  local function scanSegs(leaf, t0, t1)
+  -- every seg the ray crosses inside one leaf, nearest first.  classic doom
+  -- subsectors are not closed by minisegs, so a leaf can hold several walls
+  -- along one ray; consulting only the nearest let geometry behind it bleed
+  -- through as scattered wrong-depth pixels.
+  local function collectSegs(leaf, t0, t1)
     local packed = uf[leaf]
     local first = packed % MAXSEG
     local n = floor(packed / MAXSEG)
-    local bestT, bestPF = nil, nil
-    bestC = 1
+    local m = 0
     for i = first, first + n - 1 do
       local pv = sv[i]
       if pv then
@@ -97,21 +99,32 @@ local function bspWalk(lv, cam, rx, ry)
         local den = rx * sdy - ry * sdx
         if den ~= 0 then
           local t = ((ax - cx) * sdy - (ay - cy) * sdx) / den
-          if t > t0 + 0.03 and t <= t1 + 0.03 and (not bestT or t < bestT) then
+          -- strictly inside the region: a wall beyond its exit or before its
+          -- entry belongs to a neighbouring leaf.  the old +/-0.03 slop made
+          -- the crossing list non-monotonic, which is the "exploding voxel"
+          -- artifact at partition boundaries.
+          if t >= t0 and t <= t1 then
             local u = ((ax - cx) * ry - (ay - cy) * rx) / den
             if u >= 0 and u <= 1 then
-              bestT, bestPF = t, sf[i]
+              -- insertion sort by t; seg lists inside a leaf are short
+              local j = m
+              while j >= 1 and segT[j] > t do
+                segT[j + 1], segPF[j + 1], segC[j + 1] = segT[j], segPF[j], segC[j]
+                j = j - 1
+              end
+              segT[j + 1], segPF[j + 1] = t, sf[i]
               local adx = sdx < 0 and -sdx or sdx
               local ady = sdy < 0 and -sdy or sdy
               -- doom brightens east-west walls and darkens north-south ones so
               -- that corners read even with no texture on them
-              bestC = 1 + 0.22 * (adx - ady) / (adx + ady + 0.0001)
+              segC[j + 1] = 1 + 0.22 * (adx - ady) / (adx + ady + 0.0001)
+              m = m + 1
             end
           end
         end
       end
     end
-    return bestT, bestPF, bestC
+    return m
   end
 
   local function wallColor(pf, contrast)
@@ -132,11 +145,35 @@ local function bspWalk(lv, cam, rx, ry)
   end
 
   local function emit(t, sector, solid, r, g, b)
+    -- crossing times must never move backwards; a stale one means a
+    -- neighbouring region already resolved geometry closer to the eye
+    if count > 0 and t < ct[count] then return end
     count = count + 1
     ct[count] = t
     csec[count] = sector
     csolid[count] = solid
     cwr[count], cwg[count], cwb[count] = r, g, b
+  end
+
+  -- resolve the leaf the ray is currently inside: emit every seg crossing in
+  -- order; a one-sided seg ends the walk.  returns true when stopped, and
+  -- whether any seg was found at all.
+  local function flushLeaf(pending, t0, t1, nextSector)
+    local m = collectSegs(pending, t0, t1)
+    local k = 1
+    while k <= m do
+      local t, pf = segT[k], segPF[k]
+      local r, g, b = wallColor(pf, segC[k])
+      lastR, lastG, lastB = r, g, b
+      if floor(pf / SOLIDBIT) % 2 == 1 then
+        emit(t, csec[count], true, r, g, b)
+        return true, true
+      end
+      local bs = floor(pf / MAXSEC) % MAXSEC
+      emit(t, bs > 0 and bs or nextSector, false, r, g, b)
+      k = k + 1
+    end
+    return false, m > 0
   end
 
   -- each stack entry is a region: the node, and the ray parameters at which
@@ -183,17 +220,12 @@ local function bspWalk(lv, cam, rx, ry)
       if not pending then
         emit(0, us[leaf], false, lastR, lastG, lastB)
       else
-        local hitT, hitPF, hitC = scanSegs(pending, pendingT, pendingExit)
-        if hitPF then
-          local r, g, b = wallColor(hitPF, hitC)
-          lastR, lastG, lastB = r, g, b
-          if floor(hitPF / SOLIDBIT) % 2 == 1 then
-            emit(hitT, csec[count], true, r, g, b)
-            stopped = true
-          else
-            emit(hitT, us[leaf], false, r, g, b)
-          end
-        else
+        local stoppedNow, foundAny = flushLeaf(pending, pendingT, pendingExit, us[leaf])
+        if stoppedNow then
+          stopped = true
+        elseif not foundAny then
+          -- no wall separated the two regions: record the sector change at the
+          -- new region's entry so the row loop switches planes there
           emit(t0, us[leaf], false, lastR, lastG, lastB)
         end
       end
@@ -201,12 +233,7 @@ local function bspWalk(lv, cam, rx, ry)
     end
   end
   if not stopped and pending then
-    local hitT, hitPF, hitC = scanSegs(pending, pendingT, pendingExit)
-    if hitPF then
-      local r, g, b = wallColor(hitPF, hitC)
-      emit(hitT, csec[count], true, r, g, b)
-      stopped = true
-    end
+    if flushLeaf(pending, pendingT, pendingExit, 0) then stopped = true end
   end
   if count == 0 then emit(0, 1, false, lastR, lastG, lastB) end
   count = count + 1
@@ -219,6 +246,7 @@ end
 
 local function renderFrame(lv, cam, sprites, tick)
   local fh, ch, sky = lv.sfh, lv.sch, lv.ssky
+  local swtop = lv.swtop
   local fcr, fcg, fcb = lv.fcr, lv.fcg, lv.fcb
   local ccr, ccg, ccb = lv.ccr, lv.ccg, lv.ccb
   local fx = cos(cam.yaw)
@@ -244,10 +272,18 @@ local function renderFrame(lv, cam, sprites, tick)
       while true do
         local s = csec[j]
         local dmin, kind = VOID, 0     -- 0 = ceiling, 1 = floor
-        local dc = (eyeZ - ch[s]) / tanh
-        if dc > 0 and dc < dmin then dmin = dc end
-        local df = (eyeZ - fh[s]) / tanh
-        if df > 0 and df < dmin then dmin = df kind = 1 end
+        -- planes are one-sided: a ceiling is only seen from below, a floor
+        -- only from above.  without the facing test an eye nudged above a low
+        -- ceiling painted the floor rows with the ceiling's flat, which read
+        -- as the ground "breaking".
+        if eyeZ < ch[s] then
+          local d = (eyeZ - ch[s]) / tanh
+          if tanh < 0 and d > 0 then dmin, kind = d, 0 end
+        end
+        if eyeZ > fh[s] then
+          local d = (eyeZ - fh[s]) / tanh
+          if tanh > 0 and d > 0 and d < dmin then dmin, kind = d, 1 end
+        end
         local nx = j + 1
         if nx > ccount or dmin < ct[nx] then
           if kind == 0 and sky[s] then
@@ -258,6 +294,32 @@ local function renderFrame(lv, cam, sprites, tick)
             local r, g, b
             if kind == 1 then r, g, b = mix(fcr[s], fcg[s], fcb[s], dmin)
             else r, g, b = mix(ccr[s], ccg[s], ccb[s], dmin) end
+            -- water: an animated surface plane across sectors flagged wet, plus
+            -- a depth tint on the ground and everything seen below the surface
+            local wt = swtop[s]
+            if wt then
+              if eyeZ > wt then
+                if tanh > 0 then
+                  local dwt = (eyeZ - wt) / tanh
+                  if dwt > 0 and dwt < dmin then
+                    local rip = sin(dwt * 0.09 + tick * 0.11 + col * 0.35) * 0.5 + 0.5
+                    r, g, b = mix(30 + rip * 30, 70 + rip * 36, 160 + rip * 50, dwt)
+                    px[idx] = pack(r, g, b)
+                    depth[idx] = dwt
+                    break
+                  end
+                end
+                if kind == 1 and fh[s] < wt then
+                  local sub = (wt - fh[s]) / 96
+                  if sub > 1 then sub = 1 end
+                  sub = sub * 0.45
+                  r, g, b = r * (1 - sub), g * (1 - sub * 0.6) + 10 * sub, b * (1 - sub * 0.2) + 70 * sub
+                end
+              elseif eyeZ < wt then
+                -- the eye itself is under the surface: tint the whole view
+                r, g, b = r * 0.42, g * 0.62, b * 1.18
+              end
+            end
             px[idx] = pack(r, g, b)
             depth[idx] = dmin
           end
@@ -376,6 +438,8 @@ function render.init(width, height, fovDegrees)
   FOCAL = (VIEWW / 2) / math.tan(((fovDegrees or 90) / 2) * math.pi / 180)
   px, depth = {}, {}
   ct, csec, csolid, cwr, cwg, cwb = {}, {}, {}, {}, {}, {}
+  segT, segPF, segC = {}, {}, {}
+  for i = 1, 64 do segT[i], segPF[i], segC[i] = 0, 0, 1 end
   wallCacheR, wallCacheG, wallCacheB = {}, {}, {}
   fgp, bgp, gly = {}, {}, {}
   local cells = VIEWW * (VIEWH / 2)
