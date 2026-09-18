@@ -35,6 +35,19 @@ function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
   local clips = {{x1=1,y1=1,x2=width,y2=height}}
   local depthOk, depth = pcall(gpu.getDepth)
   r.depth=depthOk and depth or 1
+
+  -- opencomputers 1.8 gpus can hold off-screen pages in video ram. drawing into
+  -- one costs no call budget and no energy at all (only writes to page 0, the
+  -- screen, are charged), so a frame is composed for free and then pushed with a
+  -- single bitblt. that is worth roughly an order of magnitude over issuing one
+  -- gpu.set per changed run straight to the screen.
+  local backBuffer
+  if gpu.allocateBuffer and gpu.setActiveBuffer and gpu.bitblt then
+    pcall(gpu.freeAllBuffers)
+    local allocated,index=pcall(gpu.allocateBuffer,width,height)
+    if allocated and type(index)=="number" and index>0 then backBuffer=index end
+  end
+  r.buffered = backBuffer~=nil
   local upperOk,upperHalf=pcall(unicode.char,0x2580)
   local lowerOk,lowerHalf=pcall(unicode.char,0x2584)
   r.semiPixels = depthOk and depth >= 4 and upperOk and lowerOk and type(upperHalf)=="string" and type(lowerHalf)=="string" and unicode.len(upperHalf)==1 and unicode.len(lowerHalf)==1
@@ -101,6 +114,12 @@ function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
   end
 
   function r.flush()
+    local painted=false
+    -- everything drawn between here and the bitblt lands in video ram for free
+    if backBuffer and not pcall(gpu.setActiveBuffer,backBuffer) then
+      backBuffer=nil
+      r.buffered=false
+    end
     for y=1,height do
       local x=1
       while x<=width do
@@ -128,6 +147,9 @@ function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
           if gpuBg~=bg then gpu.setBackground(bg) gpuBg=bg end
           if gpuFg~=fg then gpu.setForeground(fg) gpuFg=fg end
           gpu.set(start,y,run)
+          painted=true
+          -- mirrors are separate gpus with their own active page, so they keep
+          -- taking the direct path
           for mirrorIndex=#mirrors,1,-1 do
             local mirror=mirrors[mirrorIndex]
             local ok=pcall(function()
@@ -149,6 +171,18 @@ function ui.renderer(gpu, width, height, mirrors, mirrorFailed)
         oldChars[i]=drawn and chars[i] or " "
         oldForegrounds[i]=drawn and foregrounds[i] or r.fg
         oldBackgrounds[i]=drawn and backgrounds[i] or r.bg
+      end
+    end
+    if backBuffer then
+      -- one charged call per frame instead of one per changed run
+      local shown=pcall(gpu.setActiveBuffer,0)
+      if shown and painted then shown=pcall(gpu.bitblt,0,1,1,width,height,backBuffer,1,1) end
+      if not shown then
+        backBuffer=nil
+        r.buffered=false
+        pcall(gpu.setActiveBuffer,0)
+        oldChars,oldForegrounds,oldBackgrounds={},{},{}
+        gpuFg,gpuBg=nil,nil
       end
     end
   end
