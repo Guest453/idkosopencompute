@@ -1,7 +1,7 @@
 return {
   id = "srb2",
   name = "SRB2: Greenflower Zone Act 1",
-  version = "1.0.0",
+  version = "1.1.0",
   author = "idk os port; artwork and level data (c) Sonic Team Junior",
   entry = "main.lua",
   icon = "srb2",

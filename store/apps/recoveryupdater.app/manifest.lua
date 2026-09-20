@@ -1,7 +1,7 @@
 return {
   id="recoveryupdater",
   name="recovery updater",
-  version="1.0.1",
+  version="1.0.2",
   author="idk os",
   entry="main.lua",
   icon="recoveryupdater",
