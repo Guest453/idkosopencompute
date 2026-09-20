@@ -42,7 +42,7 @@ return {
     path="store/apps/components.app", files={"manifest.lua","main.lua"}
   },
   {
-    id="recoveryupdater", name="recovery updater", version="1.0.1", author="idk os",
+    id="recoveryupdater", name="recovery updater", version="1.0.2", author="idk os",
     category="system", icon="recoveryupdater", color=0x397fca,
     description="reboot into a ram-resident full-system updater",
     details="uses component.invoke-compatible networking, stages every official image file, updates /init.lua last, and rolls back failed writes.",

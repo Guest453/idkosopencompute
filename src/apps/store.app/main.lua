@@ -117,11 +117,14 @@ return function(app)
     if type(response)=="function" then local ok,code=pcall(response); if ok then return code end end
   end
 
-  local function fetch(url)
+  local function fetchOnce(url)
     if not internet then return nil,"internet card not installed" end
     local ok,handle,reason=pcall(internet.request,url)
     if not ok then return nil,short(handle,100) end
-    if not handle then return nil,reason or "request failed" end
+    if not handle then return nil,reason or ("request could not be opened: "..url) end
+    -- fail fast on a status code instead of downloading the error body
+    local code=responseCode(handle)
+    if code and (code<200 or code>=300) then pcall(handle.close) return nil,"http "..tostring(code).." at "..url end
     local parts,size={},0
     local readOk,readError=pcall(function()
       for chunk in handle do
@@ -131,12 +134,23 @@ return function(app)
         parts[#parts+1]=chunk
       end
     end)
-    if not readOk then pcall(handle.close) return nil,short(readError,100) end
-    local code=responseCode(handle)
+    if not readOk then pcall(handle.close)
+      local msg=short(readError,100)
+      return nil,(msg~="" and msg~="nil" and msg) or ("connection lost while reading "..url)
+    end
     pcall(handle.close)
-    if code and (code<200 or code>=300) then return nil,"http "..tostring(code) end
     local data=table.concat(parts)
-    if #data==0 then return nil,"empty response" end
+    if #data==0 then return nil,"empty response from "..url end
+    return data
+  end
+
+  local function fetch(url)
+    local data,reason=fetchOnce(url)
+    if not data then
+      -- one quiet retry: in-world wifi drops are common and immediate
+      data,reason=fetchOnce(url)
+    end
+    if not data then return nil,(reason and #reason>0 and reason) or ("download failed: "..url) end
     return data
   end
 

@@ -284,7 +284,16 @@ end
 local function fetch(url, limit)
   local called, request, reason = invokeComponent(internet, internetAddress, "request", url)
   if not called then return nil, reason or "internet request method is unavailable" end
-  if not request then return nil, reason or "request failed" end
+  if not request then return nil, reason or ("request could not be opened: " .. url) end
+
+  -- fail fast on a status code instead of downloading the error body; a nil
+  -- code just means the headers are not in yet, so the read loop decides
+  local responseOk, code = requestMethod(request, "response")
+  local responseCode = responseOk and tonumber(code) or nil
+  if responseCode and (responseCode < 200 or responseCode >= 300) then
+    closeRequest(request)
+    return nil, "http " .. tostring(responseCode) .. " at " .. url
+  end
 
   local parts, size = {}, 0
   local lastData = rawComputer.uptime()
@@ -293,19 +302,21 @@ local function fetch(url, limit)
     local readOk, chunk, readReason = requestMethod(request, "read")
     if not readOk then
       closeRequest(request)
-      return nil, readReason or "response read method is unavailable"
+      return nil, (type(readReason) == "string" and readReason ~= "" and readReason ~= "nil" and readReason)
+        or ("connection lost while reading " .. url)
     end
 
     if chunk == nil then
       if readReason then
         closeRequest(request)
-        return nil, readReason
+        return nil, (type(readReason) == "string" and readReason ~= "" and readReason ~= "nil" and readReason)
+          or ("connection lost while reading " .. url)
       end
       break
     elseif chunk == "" then
       if rawComputer.uptime() - lastData > 30 then
         closeRequest(request)
-        return nil, "network timeout"
+        return nil, "network timeout while reading " .. url
       end
       rawComputer.pullSignal(0.05)
     else
@@ -319,17 +330,10 @@ local function fetch(url, limit)
     end
   end
 
-  local responseCode
-  local responseOk, code = requestMethod(request, "response")
-  if responseOk then responseCode = tonumber(code) end
   closeRequest(request)
 
-  if responseCode and (responseCode < 200 or responseCode >= 300) then
-    return nil, "http " .. tostring(responseCode)
-  end
-
   local data = table.concat(parts)
-  if #data == 0 then return nil, "empty response" end
+  if #data == 0 then return nil, "empty response from " .. url end
   return data
 end
 

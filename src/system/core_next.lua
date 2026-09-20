@@ -190,16 +190,19 @@ core.dirty = true
 return true
 end
 function core.setDisplay(mode)
-local ok, maxW, maxH = pcall(gpu.maxResolution)
-if not ok then return nil, maxW end
-local limits = {compact = {60, 20}, balanced = {80, 25}}
-if mode == "native" or mode == "maximum" then
-local freeOk, freeMemory = pcall(computer.freeMemory)
-local totalOk, totalMemory = pcall(computer.totalMemory)
-local safe, required = ui.memorySafe(maxW, maxH, freeOk and freeMemory, totalOk and totalMemory)
-if not safe then return nil, "native mode needs " .. tostring(required or "more") .. " bytes" end
-return useResolution(maxW, maxH, true)
-end
+ local ok, maxW, maxH = pcall(gpu.maxResolution)
+ if not ok then return nil, maxW end
+ local limits = {compact = {60, 20}, balanced = {80, 25}}
+ if mode == "native" or mode == "maximum" then
+  -- native is capped at 720p: 160x45 cells at the 8x16 glyph size is exactly
+  -- 1280x720 pixels. larger fork screens would only spend ram on extra rows.
+  local nativeW, nativeH = math.min(maxW, 160), math.min(maxH, 45)
+  local freeOk, freeMemory = pcall(computer.freeMemory)
+  local totalOk, totalMemory = pcall(computer.totalMemory)
+  local safe, required = ui.memorySafe(nativeW, nativeH, freeOk and freeMemory, totalOk and totalMemory)
+  if not safe then return nil, "native mode needs " .. tostring(required or "more") .. " bytes" end
+  return useResolution(nativeW, nativeH, true)
+ end
 local size = limits[mode]
 if not size then return nil, "unknown display mode" end
 return useResolution(math.min(maxW, size[1]), math.min(maxH, size[2]), true)
