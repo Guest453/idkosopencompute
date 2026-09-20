@@ -52,6 +52,23 @@ drawEllipse(math.floor(W * 0.18), math.floor(H * 0.76), math.floor(W * 0.34), ma
 drawEllipse(math.floor(W * 0.18), math.floor(H * 0.76), math.floor(W * 0.26), math.floor(H * 0.21), 0x1d6678)
 drawEllipse(math.floor(W * 0.84), math.floor(H * 1.18), math.floor(W * 0.38), math.floor(H * 0.34), 0x354b83)
 drawEllipse(math.floor(W * 0.84), math.floor(H * 1.18), math.floor(W * 0.28), math.floor(H * 0.25), 0x405b92)
+-- drifting aurora ribbons: two sine bands out of phase, each column blended
+-- over the gradient at its own height so the ribbon reads as translucent
+local phase = computer.uptime() * 0.55
+for band = 1, 2 do
+local baseY = math.floor(H * (band == 1 and 0.34 or 0.52))
+local speed = band == 1 and 0.5 or -0.34
+local tint = band == 1 and 0x1d6a67 or 0x2a5d8a
+for x = 1, W do
+local y = baseY + math.sin(x / 9 + phase * speed) * 2.2 + math.sin(x / 23 - phase * speed * 0.7) * 1.5
+local semiY = math.floor(y * 2)
+if semiY >= first and semiY <= last - 1 then
+local amount = (semiY - first) / math.max(1, last - first)
+local under = amount < 0.62 and mixColor(top, middle, amount / 0.62) or mixColor(middle, bottom, (amount - 0.62) / 0.38)
+ui.pixelRect(display, x, semiY, 1, 2, mixColor(under, tint, 0.55))
+end
+end
+end
 ui.pixelRect(display, 1, H * 2 - 1, W, 1, 0x5d79aa)
 end
 end]]
@@ -127,7 +144,8 @@ ui.fill(display, x, y, w, h, win.bg)
 local titleColor = focused and 0xeaf0f4 or 0xd5dde3
 ui.fill(display, x, y, w, 1, titleColor)
 ui.pixelRect(display, x, y * 2 - 1, w, 1, 0xffffff)
-ui.pixelRect(display, x, y * 2, w, 1, focused and 0x8ba6b8 or 0xaab7c0)
+-- focused windows wear the accent as the title bar's lower half-row
+ui.pixelRect(display, x, y * 2, w, 1, focused and core.theme.accent or 0xaab7c0)
 ui.pixelRect(display, x + 1, y * 2 - 1, 2, 2, core.theme.danger)
 ui.pixelRect(display, x + 4, y * 2 - 1, 2, 2, core.theme.warning)
 ui.pixelRect(display, x + 7, y * 2 - 1, 2, 2, core.theme.success)

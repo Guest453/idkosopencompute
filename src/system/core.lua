@@ -6,6 +6,10 @@ local keyboard = require("keyboard")
 local unicode = require("unicode")
 local ui = dofile("/idkos/system/ui.lua")
 
+-- the most cells one app may submit in a single frame. sized for the largest
+-- screen a gpu can drive, not for the old 160x50 ceiling.
+local CANVAS_CELL_LIMIT = 65536
+
 local core = {
   apps = {}, tasks = {}, windows = {}, nextPid = 100,
   running = true, focused = nil, dragging = nil, dirty = true,
@@ -187,7 +191,7 @@ function Window:canvas(x,y,width,height,cells)
   local maxWidth,maxHeight=math.max(0,self.width-x+1),math.max(0,self.height-y)
   width,height=math.min(math.max(0,width),maxWidth),math.min(math.max(0,height),maxHeight)
   local count=width*height
-  if count<1 or count>math.min(4096,self.width*math.max(0,self.height-1)) or self.canvasCells+count>4096 then return nil,"canvas exceeds window bounds" end
+  if count<1 or count>math.min(CANVAS_CELL_LIMIT,self.width*math.max(0,self.height-1)) or self.canvasCells+count>CANVAS_CELL_LIMIT then return nil,"canvas exceeds window bounds" end
   local backgrounds,foregrounds,glyphs={}, {}, {}
   for i=1,count do
     local bg=tonumber(cells.backgrounds[i])
