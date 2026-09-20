@@ -139,26 +139,38 @@ function fs.mounts()
     return boot, "/"
   end
 end
-function fs.makeDirectory(path) return boot.makeDirectory(canonical(path)) end
-function fs.rename(from, to) return boot.rename(canonical(from), canonical(to)) end
+-- some filesystem components fail with no reason string at all; normalize
+-- every failure to nil plus a message so callers never stringify a nil.
+function fs.makeDirectory(path)
+  local ok, reason = boot.makeDirectory(canonical(path))
+  if not ok then return nil, reason or "cannot create directory " .. tostring(path) end
+  return true
+end
+function fs.rename(from, to)
+  local ok, reason = boot.rename(canonical(from), canonical(to))
+  if not ok then return nil, reason or "cannot rename " .. tostring(from) end
+  return true
+end
 function fs.list(path)
   local entries, reason = boot.list(canonical(path))
-  if not entries then return nil, reason end
+  if not entries then return nil, reason or ("cannot list " .. tostring(path)) end
   local index = 0
   return function() index = index + 1; return entries[index] end
 end
 local function removeTree(path)
   if boot.isDirectory(path) then
     local entries, reason = boot.list(path)
-    if not entries then return nil, reason end
+    if not entries then return nil, reason or ("cannot list " .. tostring(path)) end
     for _, name in ipairs(entries) do
       name = name:gsub("/$", "")
       local child = path == "/" and ("/" .. name) or (path .. "/" .. name)
       local ok, childReason = removeTree(child)
-      if not ok then return nil, childReason end
+      if not ok then return nil, childReason or ("cannot remove " .. tostring(child)) end
     end
   end
-  return boot.remove(path)
+  local ok, reason = boot.remove(path)
+  if not ok then return nil, reason or ("cannot remove " .. tostring(path)) end
+  return true
 end
 function fs.remove(path) return removeTree(canonical(path)) end
 function fs.open(path, mode)

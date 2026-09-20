@@ -13,6 +13,16 @@ return function(app)
     return unicode.sub(value,1,limit)
   end
 
+  -- filesystem and network layers can fail without a reason string; a bare
+  -- tostring(nil) reads "nil" and tells nobody anything. map empties to a
+  -- fallback that names what actually failed.
+  local function why(value,fallback)
+    local text=value and tostring(value) or ""
+    text=text:gsub("[%c]"," "):gsub("%s+"," ")
+    if text=="" or text=="nil" or text=="false" then return fallback end
+    return text
+  end
+
   local function target(item) return "/home/Apps/"..item.id..".app" end
   local function installed(item)
     local found=app.apps()[item.id]
@@ -208,7 +218,7 @@ return function(app)
   local function refresh()
     pulse("loading catalog...")
     local data,reason=fetch(base.."store/index.lua")
-    if not data then status,busy="catalog: "..tostring(reason),false return end
+    if not data then status,busy="catalog: "..why(reason,"cannot reach "..base),false return end
     local fn,syntaxError=load(data,"=store-index","t",{})
     if not fn then status,busy="invalid catalog: "..short(syntaxError,90),false return end
     local ok,result=pcall(fn)
@@ -265,25 +275,25 @@ return function(app)
     if collision and collision.path~=dir then status,busy="a protected built-in uses this id",false return end
     pulse("preparing "..item.name.."...")
     local made,makeError=app.fs.makeDirectory(root)
-    if not made and not app.fs.isDirectory(root) then status,busy=tostring(makeError),false return end
+    if not made and not app.fs.isDirectory(root) then status,busy=why(makeError,"cannot create "..root),false return end
     if app.fs.exists(backup) then
       if app.fs.exists(dir) then
         local cleaned,cleanError=removeTree(backup,backup)
-        if not cleaned then status,busy="backup cleanup: "..tostring(cleanError),false return end
+        if not cleaned then status,busy="backup cleanup: "..why(cleanError,"cannot clean old backup"),false return end
       else
         local recovered,recoverError=app.fs.rename(backup,dir)
-        if not recovered then status,busy="recovery: "..tostring(recoverError),false return end
+        if not recovered then status,busy="recovery: "..why(recoverError,"cannot restore interrupted install"),false return end
       end
     end
     local cleaned,cleanError=removeTree(stage,stage)
-    if not cleaned then status,busy="staging cleanup: "..tostring(cleanError),false return end
+    if not cleaned then status,busy="staging cleanup: "..why(cleanError,"cannot clean staging directory"),false return end
     made,makeError=app.fs.makeDirectory(stage)
-    if not made then status,busy=tostring(makeError),false return end
+    if not made then status,busy=why(makeError,"cannot create staging directory"),false return end
     local totalSize=0
     for index,file in ipairs(item.files) do
       pulse(string.format("downloading %d/%d: %s",index,#item.files,file))
       local data,reason=fetch(base..item.path.."/"..file)
-      if not data then removeTree(stage,stage) status,busy=tostring(reason),false return end
+      if not data then removeTree(stage,stage) status,busy=why(reason,"download failed: "..file),false return end
       totalSize=totalSize+#data
       if totalSize>maxPackageSize then removeTree(stage,stage) status,busy="package exceeds 4 mib limit",false return end
       local extension=file:match("%.([%w]+)$")
@@ -302,19 +312,19 @@ return function(app)
         end
       end
       local out,openError=io.open(app.fs.concat(stage,file),"w")
-      if not out then removeTree(stage,stage) status,busy=tostring(openError),false return end
+      if not out then removeTree(stage,stage) status,busy=why(openError,"cannot write "..file),false return end
       local written,writeError=out:write(data) out:close()
-      if not written then removeTree(stage,stage) status,busy=tostring(writeError),false return end
+      if not written then removeTree(stage,stage) status,busy=why(writeError,"cannot write "..file),false return end
     end
     if app.fs.exists(dir) then
       local saved,saveError=app.fs.rename(dir,backup)
-      if not saved then removeTree(stage,stage) status,busy=tostring(saveError),false return end
+      if not saved then removeTree(stage,stage) status,busy=why(saveError,"cannot move old package to backup"),false return end
     end
     local activated,activateError=app.fs.rename(stage,dir)
     if not activated then
       if app.fs.exists(backup) then
         local restored,restoreError=app.fs.rename(backup,dir)
-        if not restored then activateError=tostring(activateError).."; restore: "..tostring(restoreError) end
+        if not restored then activateError=why(activateError,"activation failed").."; restore: "..why(restoreError,"restore failed") end
       end
       removeTree(stage,stage) status,busy=tostring(activateError),false return
     end
@@ -340,7 +350,7 @@ return function(app)
     pulse("removing "..item.name.."...")
     local ok,reason=removeTree(dir,dir)
     app.rescanApps()
-    if not ok then status,busy="uninstall: "..tostring(reason),false
+    if not ok then status,busy="uninstall: "..why(reason,"cannot remove package"),false
     elseif app.apps()[item.id] and app.apps()[item.id].path==dir then status,busy="uninstall verification failed",false
     else status,busy=item.name.." uninstalled",false end
     confirm=nil
