@@ -1,7 +1,7 @@
 return {
-  version = 8,
-  file = "update8.os",
-  path = "updates/update8.os",
+  version = 9,
+  file = "update9.os",
+  path = "updates/update9.os",
   channel = "main",
-  notes = "automatic boot update checks, .os packages, diagnostic update environment, and kernel panic screen"
+  notes = "installer app to move the os off a floppy, honest download errors, 720p native display, ram staging for small disks"
 }

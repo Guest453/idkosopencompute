@@ -4,8 +4,11 @@ local filesystem = require("filesystem")
 
 local ROOT = "https://raw.githubusercontent.com/Guest453/idkosopencompute/"
 local UPDATE_DIR = "/idkos/update"
-local STAGE = UPDATE_DIR .. "/stage"
-local BACKUP = UPDATE_DIR .. "/backup"
+-- staging and backup live in /tmp, the ram-backed filesystem: the boot medium
+-- can be a floppy too small to hold a second copy of the os, which used to
+-- make every update die halfway. pending.os and state.log stay on /idkos.
+local STAGE = "/tmp/idkos-update/stage"
+local BACKUP = "/tmp/idkos-update/backup"
 local PENDING = UPDATE_DIR .. "/pending.os"
 local NEXT_BOOT = UPDATE_DIR .. "/next_boot"
 local RUNNING = UPDATE_DIR .. "/running"
