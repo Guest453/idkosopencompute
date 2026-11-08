@@ -257,6 +257,8 @@ function wad.load(path)
           local top = math.min(target.ch, control.ch)
           if top > bottom then
             local water = special == 121 or special == 123
+            local invisible = special == 105
+            local sideSlot = math.floor(lf[i] / (MAXSEC * MAXSEC * 2))
             local list = fofsBySector[targetIndex]
             if not list then list = {} fofsBySector[targetIndex] = list end
             local duplicate = false
@@ -270,9 +272,12 @@ function wad.load(path)
               local f = {
                 sec = targetIndex,
                 btm = bottom, top = top,
-                water = water, solid = not water and special ~= 105,
-                topcol = water and 0x276EAD or control.fcol,
-                botcol = water and 0x164D82 or control.ccol,
+                water = water, solid = not water, invisible = invisible,
+                -- The control sector ceiling paints the upper FOF surface;
+                -- its floor paints the underside (SRB2 FOF convention).
+                topcol = water and 0x276EAD or control.ccol,
+                botcol = water and 0x164D82 or control.fcol,
+                sidecol = wallpal[sideSlot] or control.fcol,
               }
               list[#list + 1] = f
               fofs[#fofs + 1] = f
