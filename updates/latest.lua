@@ -1,7 +1,7 @@
 return {
-  version = 13,
-  file = "update13.os",
-  path = "updates/update13.os",
+  version = 14,
+  file = "update14.os",
+  path = "updates/update14.os",
   channel = "main",
-  notes = "VM Manager 0.2.0: redesigned interface, read-only real OpenComputers floppy boot, device selection and 80x25 virtual GPU"
+  notes = "VM Manager 0.2.1: fix OpenOS filesystem.lua crash by emulating component.list lookup and iteration"
 }
