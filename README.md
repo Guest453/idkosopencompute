@@ -70,6 +70,39 @@ inferno is a two-minute transformed wad geometry demo based on `MAP01` from **Be
 
 at startup, inferno safely parses selected map structures, then scales and rasterizes one-sided and impassable geometry into a bounded collision grid for custom raycaster gameplay. it is not a doom player, does not run doom, and does not implement full wad or boom semantics. gameplay uses a transformed subset of map things and a generated reachable exit; it does not reproduce doom's engine, textures, sounds, music, graphics, or other assets. no doom iwad is included or required. every reset starts a strict 120-second deadline, after which the demo ends and can be restarted. the app keeps this limitation visible during play. attribution and the indication of changes are installed with the package in `LICENSE-BFS1H.txt`.
 
+
+## virtual machines (built-in)
+
+The **virtual machines** app is preinstalled in system image version 10.
+It runs cooperative *Lua virtual computers* in a desktop window. It is not
+x86 emulation, a hardware hypervisor, or a complete stock OpenOS computer.
+Guest programs cannot intentionally access the host filesystem; they see
+virtual components and files stored in a per-VM disk image.
+
+Select **new VM**, enter a name and set disk capacity (64, 128, 256, or
+512 KiB) and reported RAM (256, 512, or 1024 KiB). The manager creates
+a single versioned file at /home/VMs/<name>.vhd, then starts a bundled guest
+Lua command shell. The guest has virtual GPU/screen (text cells and colors),
+keyboard, EEPROM, filesystem, computer clock, and signal queue. Its boot
+entry is /init.lua inside the VHD. The shell includes help, dir, cat,
+write, run, df, clear, reboot and shutdown. Guest modules can be stored at
+/lib/*.lua; disk writes persist to the VHD.
+
+To replace the guest entrypoint with your own Lua program, put its source
+at /home/VMs/guest-init.lua on the host and use **import** in VM Manager.
+The previous boot script is retained inside the VHD as /init.bak.
+Only this explicitly selected host script is imported; guests do not get
+host filesystem APIs. Removing a VHD erases that VM's guest data.
+
+Constraints: there is one active guest at a time; CPU execution is cooperative
+and an instruction watchdog is used only when the host Lua debug hook is
+available. Virtual RAM values are informational rather than strict host
+memory quotas. The VHD is a compact custom file container, not an HDD sector
+image. It cannot boot unmodified OpenOS or arbitrary OS images; supporting
+stock OpenOS requires a more complete GPU/OS component emulation layer and a
+way to import its full boot filesystem. Do not run untrusted Lua expecting
+the same isolation as a real hypervisor.
+
 ## app packages
 
 apps are directories ending in `.app`:
