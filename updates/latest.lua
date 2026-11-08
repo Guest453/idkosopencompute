@@ -1,7 +1,7 @@
 return {
-  version = 10,
-  file = "update10.os",
-  path = "updates/update10.os",
+  version = 11,
+  file = "update11.os",
+  path = "updates/update11.os",
   channel = "main",
-  notes = "preinstalled virtual machines, persistent .vhd disk images, guest Lua GPU/computer emulation and custom guest boot scripts"
+  notes = "OpenOS 80x25 default resolution, custom width/height Settings, RAM/GPU validation, saved display size across reboots"
 }
