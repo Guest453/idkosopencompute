@@ -140,16 +140,13 @@ function wad.load(path)
     lv[i] = v1 + v2 * MAXV
     lf[i] = fsec + bsec * MAXSEC + solid * (MAXSEC * MAXSEC) + slot * (MAXSEC * MAXSEC * 2)
     if solid == 1 then solidCount = solidCount + 1 end
-    -- physics also has to stop at two-sided lines the player cannot fit through
-    -- or step over: srb2's step height is 24 and the player is 26 tall.
+    -- Only permanently impassable or one-sided walls go into the static
+    -- blockmap. Two-sided portal clearance and step height depend on the
+    -- player's CURRENT z and direction, so game.lua checks them dynamically.
     local block = solid
-    if block == 0 and fsec > 0 and bsec > 0 then
-      local a, b = sectors[fsec], sectors[bsec]
-      local gap = math.min(a.ch, b.ch) - math.max(a.fh, b.fh)
-      local step = math.abs(a.fh - b.fh)
-      if gap < HEADROOM or step > STEPHEIGHT then block = 1 end
+    if u16(o + 4) % 2 == 1 and not FOF_SPECIALS[special] then
+      block = 1                                -- ML_IMPASSIBLE
     end
-    if u16(o + 4) % 2 == 1 then block = 1 end   -- ML_IMPASSIBLE
     lb[i] = block
   end
   sideSec, sideSlot = nil, nil
@@ -232,67 +229,61 @@ function wad.load(path)
   nthings = count
 
   ---------------------------------------------------------------------- fofs
-  -- srb2 floor-over-floor slabs: control sectors tagged by a group of lines.
-  -- each group becomes one convex-ish blob with its control sector's heights.
-  local fofs = {}
-  do
-    -- srb2 fof lines carry the control sector on their FRONT side (back is
-    -- none in this trimmed wad), and most slabs carry a single marker line.
-    -- the slab's real outline is the control sector's whole boundary, so a
-    -- second pass collects an edge from every line touching it either side —
-    -- most gfz1 ledges turn out to be triangles, which a bounding circle
-    -- covered far too generously (the ground broke underfoot).
-    local groups = {}
-    for i = 1, nlines do
-      local special = lineSpecial[i]
-      if FOF_SPECIALS[special] then
-        local fsec = lf[i] % MAXSEC
-        if fsec > 0 then
-          local g = groups[fsec]
-          if not g then g = { sec = fsec, n = 0, minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9, sx = 0, sy = 0 } groups[fsec] = g end
-          if special == 121 then g.water = true end
-        end
-      end
+  -- FOF linedefs live in detached CONTROL sectors. Their linedef tag names
+  -- the TARGET sector(s) where a floor-over-floor actually exists. Using
+  -- the control sector's own vertices as the platform footprint (old code)
+  -- painted solid floors and water in completely unrelated map coordinates.
+  local fofs, fofsBySector = {}, {}
+  local tagged = {}
+  for index, sector in ipairs(sectors) do
+    if sector.tag > 0 then
+      local list = tagged[sector.tag]
+      if not list then list = {} tagged[sector.tag] = list end
+      list[#list + 1] = index
     end
-    for i = 1, nlines do
-      local g = groups[lf[i] % MAXSEC] or groups[math.floor(lf[i] / MAXSEC) % MAXSEC]
-      if g then
-        local packed = lv[i]
-        local v1, v2 = packed % MAXV, math.floor(packed / MAXV)
-        local x1, y1 = vx[v1], vy[v1]
-        local x2, y2 = vx[v2], vy[v2]
-        if x1 and x2 then
-          g.ex = g.ex or {}
-          g.ey = g.ey or {}
-          local en = #g.ex
-          g.ex[en + 1], g.ey[en + 1] = x1, y1
-          g.ex[en + 2], g.ey[en + 2] = x2, y2
-          if x1 < g.minx then g.minx = x1 end
-          if x1 > g.maxx then g.maxx = x1 end
-          if x2 < g.minx then g.minx = x2 end
-          if x2 > g.maxx then g.maxx = x2 end
-          if y1 < g.miny then g.miny = y1 end
-          if y1 > g.maxy then g.maxy = y1 end
-          if y2 < g.miny then g.miny = y2 end
-          if y2 > g.maxy then g.maxy = y2 end
-          g.sx, g.sy, g.n = g.sx + x1 + x2, g.sy + y1 + y2, g.n + 2
+  end
+  local lineLump = lumps.LINEDEFS
+  for i = 1, nlines do
+    local special = lineSpecial[i]
+    if FOF_SPECIALS[special] then
+      local controlIndex = lf[i] % MAXSEC
+      local control = sectors[controlIndex]
+      local tag = u16(lineLump.pos + (i - 1) * 14 + 8)
+      local targets = tagged[tag]
+      if control and targets then
+        for _, targetIndex in ipairs(targets) do
+          local target = sectors[targetIndex]
+          local bottom = math.max(target.fh, control.fh)
+          local top = math.min(target.ch, control.ch)
+          if top > bottom then
+            local water = special == 121 or special == 123
+            local list = fofsBySector[targetIndex]
+            if not list then list = {} fofsBySector[targetIndex] = list end
+            local duplicate = false
+            for _, previous in ipairs(list) do
+              if previous.btm == bottom and previous.top == top and previous.water == water then
+                duplicate = true
+                break
+              end
+            end
+            if not duplicate then
+              local f = {
+                sec = targetIndex,
+                btm = bottom, top = top,
+                water = water, solid = not water and special ~= 105,
+                topcol = water and 0x276EAD or control.fcol,
+                botcol = water and 0x164D82 or control.ccol,
+              }
+              list[#list + 1] = f
+              fofs[#fofs + 1] = f
+              if water then
+                -- The same water volumes are used by rendering and physics.
+                if not target.waterTop or top > target.waterTop then target.waterTop = top end
+                if not target.waterBtm or bottom < target.waterBtm then target.waterBtm = bottom end
+              end
+            end
+          end
         end
-      end
-    end
-    for _, g in pairs(groups) do
-      local sec = sectors[g.sec]
-      if sec and g.n > 0 then
-        local water = g.water
-        fofs[#fofs + 1] = {
-          btm = sec.fh, top = sec.ch,
-          topcol = water and 0x1E3E82 or sec.fcol,
-          botcol = water and 0x14325E or sec.ccol,
-          water = water, solid = not water,
-          minx = g.minx, miny = g.miny, maxx = g.maxx, maxy = g.maxy,
-          cx = g.sx / g.n, cy = g.sy / g.n,
-          rad = math.max(g.maxx - g.minx, g.maxy - g.miny) / 2 + 24,
-          ex = g.ex, ey = g.ey,
-        }
       end
     end
   end
@@ -340,7 +331,7 @@ function wad.load(path)
     nnodes = nnodes, npx = npx, npy = npy, ndx = ndx, ndy = ndy, nc1 = nc1, nc2 = nc2,
     nthings = nthings, tx = tx, ty = ty, ta = ta, tt = tt,
     wallpal = wallpal,
-    fofs = fofs,
+    fofs = fofs, fofsBySector = fofsBySector,
     cells = cells, cellSize = CS,
     nsolid = nsolid, bax = bax, bay = bay, bbx = bbx, bby = bby,
     startx = startx, starty = starty, startangle = startangle,
