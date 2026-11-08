@@ -19,9 +19,11 @@ end
 function ui.startupDisplayMode(maxWidth,maxHeight,freeMemory,totalMemory)
   maxWidth,maxHeight=tonumber(maxWidth),tonumber(maxHeight)
   if not maxWidth or not maxHeight then return "compact" end
-  if ui.memorySafe(maxWidth,maxHeight,freeMemory,totalMemory) then return "native" end
-  local balancedW,balancedH=math.min(maxWidth,80),math.min(maxHeight,25)
-  if ui.memorySafe(balancedW,balancedH,freeMemory,totalMemory) then return "balanced" end
+  -- OpenOS's 80x25 mode is the normal desktop resolution.
+  -- Do not automatically fill giant tier-3/forked screens just because
+  -- there's enough RAM. Larger resolutions are opt-in from Settings.
+  local standardW,standardH=math.min(maxWidth,80),math.min(maxHeight,25)
+  if ui.memorySafe(standardW,standardH,freeMemory,totalMemory) then return "balanced" end
   return "compact"
 end
 
