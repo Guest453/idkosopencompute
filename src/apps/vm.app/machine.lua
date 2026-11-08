@@ -163,7 +163,7 @@ function machine.start(disk, options)
     local data=disk.files[path]
     if mode=="r" or mode=="rb" then
       if data==nil then return nil,"file not found" end
-    elseif not disk.dirs[path:match("^(.*)/[^/]+$") or "/"] then
+    elseif not disk.dirs[diskapi.parent(path)] then
       return nil,"directory not found"
     end
     local id=vm.nextHandle
@@ -323,7 +323,7 @@ function machine.start(disk, options)
     return diskapi.canon(table.concat(parts,"/"))
   end
   guestFs.canonical=diskapi.canon
-  guestFs.path=function(p) local s=diskapi.canon(p) return s and (s:match("^(.*)/[^/]+$") or "/") end
+  guestFs.path=function(p) local s=diskapi.canon(p) return s and diskapi.parent(s) end
   guestFs.name=function(p) return tostring(p):match("([^/]+)$") end
   env.filesystem=guestFs
   env.keyboard=keyboard
