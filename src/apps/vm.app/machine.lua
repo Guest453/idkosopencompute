@@ -516,7 +516,7 @@ function machine.start(disk, options)
     if debug and type(debug.sethook)=="function" then
       pcall(debug.sethook,co,function()
         error("guest exceeded CPU instruction budget; yield with computer.pullSignal()",0)
-      end,"",150000)
+      end,"",3000000)
     end
     return co
   end
