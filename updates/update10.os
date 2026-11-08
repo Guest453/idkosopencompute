@@ -2,7 +2,7 @@ return {
   format = "idk-os-update-1",
   version = 10,
   name = "update10.os",
-  ref = "3f18e72cd1d9bba6474569e5a7eeff4f75da1d04",
+  ref = "9f852ca2d57a2cf1e199aadfc836acf021b09375",
   channel = "main",
   notes = {
     "built-in virtual machines app",
