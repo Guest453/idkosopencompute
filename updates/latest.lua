@@ -1,7 +1,7 @@
 return {
-  version = 11,
-  file = "update11.os",
-  path = "updates/update11.os",
+  version = 12,
+  file = "update12.os",
+  path = "updates/update12.os",
   channel = "main",
-  notes = "OpenOS 80x25 default resolution, custom width/height Settings, RAM/GPU validation, saved display size across reboots"
+  notes = "VM Manager 0.1.1: fix virtual disk root directory handling so newly created machines can save and boot"
 }
