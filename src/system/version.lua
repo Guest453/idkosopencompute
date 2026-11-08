@@ -1,5 +1,5 @@
 return {
-  version = 9,
-  file = "update9.os",
+  version = 10,
+  file = "update10.os",
   channel = "main"
 }
