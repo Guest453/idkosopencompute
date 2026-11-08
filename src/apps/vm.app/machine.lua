@@ -323,7 +323,7 @@ function machine.start(disk, options)
     return diskapi.canon(table.concat(parts,"/"))
   end
   guestFs.canonical=diskapi.canon
-  guestFs.path=function(p) local s=diskapi.canon(p) return s and (s:match("^(.*)/[^/]+$") or "/") end end
+  guestFs.path=function(p) local s=diskapi.canon(p) return s and (s:match("^(.*)/[^/]+$") or "/") end
   guestFs.name=function(p) return tostring(p):match("([^/]+)$") end
   env.filesystem=guestFs
   env.keyboard=keyboard
