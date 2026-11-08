@@ -1,7 +1,8 @@
 return {
-  version = 8,
+  version = 10,
   files = {
     {source="src/init.lua", target="/init.lua"},
+    {source="src/system/version.lua", target="/idkos/version.lua"},
     {source="src/system/runtime.lua", target="/idkos/system/runtime.lua"},
     {source="src/boot.lua", target="/idkos/boot.lua"},
     {source="src/system/json.lua", target="/idkos/system/json.lua"},
@@ -28,6 +29,12 @@ return {
     {source="src/apps/calculator.app/manifest.lua", target="/idkos/apps/calculator.app/manifest.lua"},
     {source="src/apps/calculator.app/main.lua", target="/idkos/apps/calculator.app/main.lua"},
     {source="src/apps/systeminfo.app/manifest.lua", target="/idkos/apps/systeminfo.app/manifest.lua"},
-    {source="src/apps/systeminfo.app/main.lua", target="/idkos/apps/systeminfo.app/main.lua"}
+    {source="src/apps/systeminfo.app/main.lua", target="/idkos/apps/systeminfo.app/main.lua"},
+    {source="src/apps/installer.app/manifest.lua", target="/idkos/apps/installer.app/manifest.lua"},
+    {source="src/apps/installer.app/main.lua", target="/idkos/apps/installer.app/main.lua"},
+    {source="src/apps/vm.app/manifest.lua", target="/idkos/apps/vm.app/manifest.lua"},
+    {source="src/apps/vm.app/main.lua", target="/idkos/apps/vm.app/main.lua"},
+    {source="src/apps/vm.app/vdisk.lua", target="/idkos/apps/vm.app/vdisk.lua"},
+    {source="src/apps/vm.app/machine.lua", target="/idkos/apps/vm.app/machine.lua"}
   }
 }
