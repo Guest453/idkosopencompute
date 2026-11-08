@@ -1,5 +1,5 @@
 return {
-  version = 13,
+  version = 14,
   files = {
     {source="src/init.lua", target="/init.lua"},
     {source="src/system/version.lua", target="/idkos/version.lua"},
