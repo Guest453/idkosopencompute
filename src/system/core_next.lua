@@ -222,8 +222,8 @@ function core.setDisplay(mode)
     return nil, "enter an integer width and height"
   end
   if custom then
-    if width < 30 or height < 12 then
-      return nil, "minimum custom size is 30x12"
+    if width < 40 or height < 16 then
+      return nil, "minimum custom size is 40x16"
     end
     if width > maxW or height > maxH then
       return nil, string.format("GPU maximum is %dx%d", maxW, maxH)
