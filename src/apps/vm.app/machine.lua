@@ -12,8 +12,8 @@ end
 
 function machine.start(disk, options)
   options = options or {}
-  local W = math.max(28, math.min(74, tonumber(options.width) or 56))
-  local H = math.max(10, math.min(25, tonumber(options.height) or 14))
+  local W = math.max(28, math.min(80, tonumber(options.width) or 80))
+  local H = math.max(10, math.min(25, tonumber(options.height) or 25))
   local ram = math.max(128, math.min(1024, tonumber(options.ram) or 256)) * 1024
   local vm = {disk=disk,width=W,height=H,ram=ram,status="running",
     bootDevice=options.drive and options.drive.address or "vhd",
@@ -46,10 +46,10 @@ function machine.start(disk, options)
   end
   local gpu={}
   function gpu.getResolution() return vm.width,vm.height end
-  function gpu.maxResolution() return 74,25 end
+  function gpu.maxResolution() return 80,25 end
   function gpu.setResolution(w,h)
     w,h=math.floor(tonumber(w) or 0),math.floor(tonumber(h) or 0)
-    if w<28 or h<10 or w>74 or h>25 then return nil,"unsupported virtual resolution" end
+    if w<28 or h<10 or w>80 or h>25 then return nil,"unsupported virtual resolution" end
     -- The VM window owns the size; guests cannot resize the host app window.
     if w~=vm.width or h~=vm.height then return nil,"VM video mode is fixed by the host" end
     return true
