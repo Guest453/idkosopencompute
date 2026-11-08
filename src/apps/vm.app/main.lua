@@ -131,6 +131,8 @@ end
     local path=ROOT.."/"..short..".vhd"
     if app.fs.exists(path) then notice="VHD already exists" return end
     local disk=vdisk.new(path,diskSizes[diskIndex])
+    vdisk.makeDirectory(disk,"/lib")
+    vdisk.makeDirectory(disk,"/bin")
     local ok,why=vdisk.write(disk,"/init.lua",BOOT)
     if not ok then notice=tostring(why) return end
     ok,why=vdisk.save(disk)
@@ -159,6 +161,31 @@ end
     active=nil
     notice=ok and "guest powered off; VHD saved" or ("save failed: "..tostring(why))
   end
+  -- Import an explicitly chosen user script as the guest's /init.lua.
+  -- Guests themselves never receive the host file APIs.
+  local function importBoot()
+    if active then notice="power off the guest before importing" return end
+    if not selected then notice="select a VHD first" return end
+    local path=ROOT.."/guest-init.lua"
+    local file=io.open(path,"r")
+    if not file then notice="put a Lua boot script at "..path return end
+    local source=file:read("*a") or ""
+    file:close()
+    if #source<1 or #source>32768 then notice="boot script must be 1-32768 bytes" return end
+    local loader,reason=load(source,"=guest-init","t",{})
+    if not loader then notice="boot script syntax: "..tostring(reason):sub(1,48) return end
+    local disk,why=vdisk.load(ROOT.."/"..selected)
+    if not disk then notice=tostring(why) return end
+    local previous=vdisk.read(disk,"/init.lua")
+    if previous then
+      local ok,err=vdisk.write(disk,"/init.bak",previous)
+      if not ok then notice=tostring(err) return end
+    end
+    local ok,err=vdisk.write(disk,"/init.lua",source)
+    if not ok then notice=tostring(err) return end
+    ok,err=vdisk.save(disk)
+    notice=ok and "imported guest init.lua (backup: /init.bak)" or tostring(err)
+  end
   local function delete()
     if active then notice="stop your VM before deleting it" return end
     if not selected then notice="nothing selected" return end
@@ -183,6 +210,7 @@ end
     win:button("disk",43,4,12,"VHD "..diskSizes[diskIndex].."k")
     win:button("memory",56,4,13,"RAM "..memorySizes[ramIndex].."k")
     win:button("refresh",70,4,8,"reload")
+    win:button("import",70,5,8,"import")
     if mode=="naming" then
       win:text(2,6,"name: "..nameInput.."_",ACCENT,BG)
       win:text(29,6,"type, then press enter or save VM",DIM,BG)
@@ -207,7 +235,7 @@ end
         win:hit("pick:"..name,2,rowY,math.min(w-4,70),1)
       end
       win:text(2,h-5,"guest hardware: GPU, screen, keyboard, EEPROM, VHD, computer",DIM,BG)
-      win:text(2,h-4,"bootable Lua scripts; stock OpenOS compatibility is incomplete",DIM,BG)
+      win:text(2,h-4,"import guest boot code: /home/VMs/guest-init.lua (<=32 KB)",DIM,BG)
     else
       local vm=active
       local y=8
@@ -248,6 +276,7 @@ end
       elseif arg=="disk" then diskIndex=diskIndex%#diskSizes+1 notice="VHD capacity selected"
       elseif arg=="memory" then ramIndex=ramIndex%#memorySizes+1 notice="reported RAM selected"
       elseif arg=="refresh" then scan() notice="VHD library refreshed"
+      elseif arg=="import" then importBoot()
       elseif type(arg)=="string" and arg:sub(1,5)=="pick:" then
         if not active then selected=arg:sub(6) notice="selected "..selected end
       end
