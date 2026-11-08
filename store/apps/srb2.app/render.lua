@@ -244,6 +244,29 @@ local function bspWalk(lv, cam, rx, ry)
   ccount = count
 end
 
+-- The exposed SIDE of a 3D floor is only visible if the adjacent
+-- sector doesn't carry the identical slab.
+local function exposedFof(lv, sector, neighbour, z)
+  local list = lv.fofsBySector and lv.fofsBySector[sector]
+  if not list then return nil end
+  for _, f in ipairs(list) do
+    if f.solid and z >= f.btm and z <= f.top then
+      local same = false
+      local other = lv.fofsBySector[neighbour]
+      if other then
+        for _, b in ipairs(other) do
+          if b.solid and b.btm == f.btm and b.top == f.top then
+            same = true
+            break
+          end
+        end
+      end
+      if not same then return f end
+    end
+  end
+  return nil
+end
+
 local function renderFrame(lv, cam, sprites, tick)
   local fh, ch, sky = lv.sfh, lv.sch, lv.ssky
   local swtop = lv.swtop
@@ -261,6 +284,8 @@ local function renderFrame(lv, cam, sprites, tick)
     local ry = fy + sy * tanv
     local len = sqrt(rx * rx + ry * ry)
     rx, ry = rx / len, ry / len
+    -- BSP intersections use ray distance; perspective uses forward distance.
+    local rayCos = rx * fx + ry * fy
     bspWalk(lv, cam, rx, ry)
 
     for y = 1, VIEWH do
@@ -268,21 +293,33 @@ local function renderFrame(lv, cam, sprites, tick)
       -- crossing cursor has to start over for each row rather than carry over.
       local j = 1
       local tanh = (y - 0.5 - CY) / FOCAL
+      local rayTan = tanh * rayCos
       local idx = (y - 1) * VIEWW + col
       while true do
         local s = csec[j]
-        local dmin, kind = VOID, 0     -- 0 = ceiling, 1 = floor
-        -- planes are one-sided: a ceiling is only seen from below, a floor
-        -- only from above.  without the facing test an eye nudged above a low
-        -- ceiling painted the floor rows with the ceiling's flat, which read
-        -- as the ground "breaking".
-        if eyeZ < ch[s] then
-          local d = (eyeZ - ch[s]) / tanh
-          if tanh < 0 and d > 0 then dmin, kind = d, 0 end
+        local dmin, kind = VOID, 0  -- ceiling, floor, FOF top, FOF underside
+        local planeFof
+        if rayTan < 0 and eyeZ < ch[s] then
+          local d = (eyeZ - ch[s]) / rayTan
+          if d > 0 then dmin, kind = d, 0 end
         end
-        if eyeZ > fh[s] then
-          local d = (eyeZ - fh[s]) / tanh
-          if tanh > 0 and d > 0 and d < dmin then dmin, kind = d, 1 end
+        if rayTan > 0 and eyeZ > fh[s] then
+          local d = (eyeZ - fh[s]) / rayTan
+          if d > 0 and d < dmin then dmin, kind = d, 1 end
+        end
+        local volumes = lv.fofsBySector and lv.fofsBySector[s]
+        if volumes then
+          for _, f in ipairs(volumes) do
+            if f.solid then
+              if rayTan > 0 and eyeZ > f.top then
+                local d = (eyeZ - f.top) / rayTan
+                if d > 0 and d < dmin then dmin, kind, planeFof = d, 2, f end
+              elseif rayTan < 0 and eyeZ < f.btm then
+                local d = (eyeZ - f.btm) / rayTan
+                if d > 0 and d < dmin then dmin, kind, planeFof = d, 3, f end
+              end
+            end
+          end
         end
         local nx = j + 1
         if nx > ccount or dmin < ct[nx] then
@@ -292,8 +329,17 @@ local function renderFrame(lv, cam, sprites, tick)
             depth[idx] = VOID
           else
             local r, g, b
-            if kind == 1 then r, g, b = mix(fcr[s], fcg[s], fcb[s], dmin)
-            else r, g, b = mix(ccr[s], ccg[s], ccb[s], dmin) end
+            if kind == 1 then
+              r, g, b = mix(fcr[s], fcg[s], fcb[s], dmin)
+            elseif kind == 2 or kind == 3 then
+              local c = kind == 2 and planeFof.topcol or planeFof.botcol
+              local light = lv.slight[s] or 1
+              r, g, b = mix(floor(c / 65536) % 256 * light,
+                            floor(c / 256) % 256 * light,
+                            c % 256 * light, dmin)
+            else
+              r, g, b = mix(ccr[s], ccg[s], ccb[s], dmin)
+            end
             -- water: an animated surface plane across sectors flagged wet, plus
             -- a depth tint on the ground and everything seen below the surface
             local wt = swtop[s]
@@ -305,7 +351,7 @@ local function renderFrame(lv, cam, sprites, tick)
                     local rip = sin(dwt * 0.09 + tick * 0.11 + col * 0.35) * 0.5 + 0.5
                     r, g, b = mix(30 + rip * 30, 70 + rip * 36, 160 + rip * 50, dwt)
                     px[idx] = pack(r, g, b)
-                    depth[idx] = dwt
+                    depth[idx] = dwt * rayCos
                     break
                   end
                 end
@@ -321,7 +367,7 @@ local function renderFrame(lv, cam, sprites, tick)
               end
             end
             px[idx] = pack(r, g, b)
-            depth[idx] = dmin
+            depth[idx] = dmin * rayCos
           end
           break
         end
@@ -329,13 +375,26 @@ local function renderFrame(lv, cam, sprites, tick)
         local blocked = csolid[nx]
         if not blocked then
           local bs = csec[nx]
-          local h = eyeZ - tanh * t
+          local h = eyeZ - rayTan * t
           blocked = h < fh[bs] - 0.01 or h > ch[bs] + 0.01
+          if not blocked then
+            local f = exposedFof(lv, s, bs, h) or exposedFof(lv, bs, s, h)
+            if f then
+              local color = f.topcol
+              local light = lv.slight[s] or 1
+              local r, g, b = mix(floor(color / 65536) % 256 * light,
+                                  floor(color / 256) % 256 * light,
+                                  color % 256 * light, t)
+              px[idx] = pack(r, g, b)
+              depth[idx] = t * rayCos
+              break
+            end
+          end
         end
         if blocked then
           local r, g, b = mix(cwr[nx], cwg[nx], cwb[nx], t)
           px[idx] = pack(r, g, b)
-          depth[idx] = t
+          depth[idx] = t * rayCos
           break
         end
         j = nx
