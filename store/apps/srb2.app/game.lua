@@ -84,7 +84,7 @@ function game.init(level, S, art)
     elseif t == 550 or t == 551 then
       ents[#ents + 1] = { k = t == 550 and "springY" or "springR", x = sx, y = sy, z = z, ang = ang, f = 1, dead = false }
     elseif t == 555 or t == 556 then
-      ents[#ents + 1] = { k = "springDY", x = sx, y = sy, z = z, ang = ang, f = 1, dead = false }
+      ents[#ents + 1] = { k = t == 555 and "springDY" or "springDR", x = sx, y = sy, z = z, ang = ang, f = 1, dead = false }
     elseif t == 558 or t == 559 then
       ents[#ents + 1] = { k = t == 558 and "springHY" or "springHR", x = sx, y = sy, z = z + 12, ang = ang, f = 1, dead = false }
     elseif t >= 400 and t <= 410 then
@@ -267,8 +267,10 @@ end
 function game.respawn()
   local p = game.player
   p.x, p.y = game.check.x, game.check.y
-  p.z = game.floorAt(p.x, p.y)
+  p.z = game.check.z or game.floorAt(p.x, p.y)
   p.vx, p.vy, p.momz = 0, 0, 0
+  p.onGround = true
+  p.rolling, p.spin = false, 0
   p.dead = false
   p.state = "play"
   p.invuln = 2
@@ -278,13 +280,15 @@ end
 
 function game.resetLevel()
   local lv = game.level
-  game.check = { x = lv.startx, y = lv.starty, z = 0, set = false }
+  game.check = { x = lv.startx, y = lv.starty, z = game.floorAt(lv.startx, lv.starty), set = false }
   game.time = 0
   game.player.rings = 0
   game.respawn()
   for i = 1, #game.entities do
     local e = game.entities[i]
-    if e.k == "ring" or e.k == "fring" then
+    if e.k == "ring" then
+      e.dead, e.respawn = false, -1
+    elseif e.k == "fring" then
       e.dead = true
     elseif e.k == "monitor" then
       e.dead = false
@@ -584,7 +588,9 @@ function game.tick(input)
       local oky = game.floorAt(e.x, ny2)
       if math.abs(oky - game.floorAt(e.x, e.y)) > 1 then e.vy = -e.vy else e.y = ny2 end
       if touch(p, e) and p.invuln <= 0 then
-        local stomp = (p.momz < -4 or p.rolling) and p.z + HEIGHT < e.z + 14
+        -- Player feet must approach the enemy from above, not the player's
+        -- head (the old check could never pass during a normal stomp).
+        local stomp = p.rolling or (p.momz < -2 and p.z >= e.z + 7)
         if stomp then
           e.dead = true
           p.momz = 8
@@ -621,6 +627,7 @@ function game.tick(input)
       if touch(p, e) then
         if not e.flash then e.flash = 30 end
         game.check.x, game.check.y = e.x, e.y
+        game.check.z = game.floorAt(e.x, e.y, p.z + STEPHEIGHT)
         game.check.set = true
         game.msg, game.msgT = "CHECKPOINT!", 1.5
       end
