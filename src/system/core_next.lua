@@ -178,34 +178,85 @@ width = ui.clip(math.floor(tonumber(width) or 1), 1, maxW)
 height = ui.clip(math.floor(tonumber(height) or 1), 1, maxH)
 if setGpu then
 local ok, changed, reason = pcall(gpu.setResolution, width, height)
-if not ok or changed == false then return nil, reason or changed end
+if not ok or not changed then return nil, reason or changed or "GPU rejected resolution" end
 end
 local ok, actualW, actualH = pcall(gpu.getResolution)
 if not ok then return nil, actualW end
 local renderOk, newDisplay = pcall(ui.renderer, gpu, actualW, actualH)
-if not renderOk then return nil, newDisplay end
+if not renderOk then
+  if setGpu then pcall(gpu.setResolution, W or oldW, H or oldH) end
+  return nil, newDisplay
+end
 W, H, display = actualW, actualH, newDisplay
 fitWindows()
 core.dirty = true
 return true
 end
 function core.setDisplay(mode)
- local ok, maxW, maxH = pcall(gpu.maxResolution)
- if not ok then return nil, maxW end
- local limits = {compact = {60, 20}, balanced = {80, 25}}
- if mode == "native" or mode == "maximum" then
-  -- native is capped at 720p: 160x45 cells at the 8x16 glyph size is exactly
-  -- 1280x720 pixels. larger fork screens would only spend ram on extra rows.
-  local nativeW, nativeH = math.min(maxW, 160), math.min(maxH, 45)
-  local freeOk, freeMemory = pcall(computer.freeMemory)
-  local totalOk, totalMemory = pcall(computer.totalMemory)
-  local safe, required = ui.memorySafe(nativeW, nativeH, freeOk and freeMemory, totalOk and totalMemory)
-  if not safe then return nil, "native mode needs " .. tostring(required or "more") .. " bytes" end
-  return useResolution(nativeW, nativeH, true)
- end
-local size = limits[mode]
-if not size then return nil, "unknown display mode" end
-return useResolution(math.min(maxW, size[1]), math.min(maxH, size[2]), true)
+  local ok, maxW, maxH = pcall(gpu.maxResolution)
+  if not ok or type(maxW) ~= "number" or type(maxH) ~= "number" then
+    return nil, "GPU maximum resolution unavailable"
+  end
+
+  local width, height, custom
+  if type(mode) == "table" then
+    width, height = tonumber(mode.width or mode[1]), tonumber(mode.height or mode[2])
+    custom = true
+  elseif type(mode) == "string" then
+    if mode == "compact" then
+      width, height = 60, 20
+    elseif mode == "balanced" or mode == "native" or mode == "maximum"
+        or mode == "standard" or mode == "openos" then
+      -- OpenOS's normal 80x25 text-cell size, not the GPU maximum.
+      width, height = 80, 25
+    else
+      local w, h = mode:match("^(%d+)%s*[xX]%s*(%d+)$")
+      if w and h then
+        width, height, custom = tonumber(w), tonumber(h), true
+      end
+    end
+  end
+
+  if not width or not height or width ~= math.floor(width) or
+      height ~= math.floor(height) then
+    return nil, "enter an integer width and height"
+  end
+  if custom then
+    if width < 30 or height < 12 then
+      return nil, "minimum custom size is 30x12"
+    end
+    if width > maxW or height > maxH then
+      return nil, string.format("GPU maximum is %dx%d", maxW, maxH)
+    end
+  else
+    width, height = math.min(maxW, width), math.min(maxH, height)
+  end
+  if width < 30 or height < 12 then
+    return nil, "GPU display is too small for idk OS"
+  end
+
+  -- Shrinking is always safe; growing checks the compositor's memory budget.
+  if not W or not H or width * height > W * H then
+    local freeOk, freeMemory = pcall(computer.freeMemory)
+    local totalOk, totalMemory = pcall(computer.totalMemory)
+    local safe, required = ui.memorySafe(
+      width, height, freeOk and freeMemory, totalOk and totalMemory)
+    if not safe then
+      return nil, "not enough RAM (need " .. tostring(required or "?") .. " bytes)"
+    end
+  end
+  return useResolution(width, height, true)
+end
+
+local function savedDisplaySize()
+  -- Data only: never execute persisted configuration as Lua code.
+  local file = io.open("/home/.idkos/display.cfg", "r")
+  if not file then return nil end
+  local value = file:read("*l")
+  file:close()
+  local w, h = tostring(value or ""):match("^(%d+)%s*[xX]%s*(%d+)$")
+  if not w or not h then return nil end
+  return {width = tonumber(w), height = tonumber(h)}
 end
 function core.createWindow(pid, options)
 options = options or {}
@@ -696,8 +747,10 @@ if not maxOk then error("gpu limits unavailable: " .. tostring(maxW)) end
 local freeOk, freeMemory = pcall(computer.freeMemory)
 local totalOk, totalMemory = pcall(computer.totalMemory)
 local mode = ui.startupDisplayMode(maxW, maxH, freeOk and freeMemory, totalOk and totalMemory)
-local resized, reason = core.setDisplay(mode)
-if not resized and mode ~= "balanced" then resized, reason = core.setDisplay("balanced") end
+local saved = savedDisplaySize()
+local resized, reason
+if saved then resized, reason = core.setDisplay(saved) end
+if not resized then resized, reason = core.setDisplay("balanced") end
 if not resized then resized, reason = core.setDisplay("compact") end
 if not resized then error("could not configure display: " .. tostring(reason)) end
 core.scanApps()
