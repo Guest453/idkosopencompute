@@ -24,8 +24,12 @@ end
 M.canon = canon
 
 local function parent(path)
-  return path:match("^(.*)/[^/]+$") or "/"
+  -- "/init.lua" matches the empty string, not nil. Lua considers "" true,
+  -- so 'or "/"' alone incorrectly rejects files directly in the VHD root.
+  local dir = path:match("^(.*)/[^/]+$")
+  return dir and dir ~= "" and dir or "/"
 end
+M.parent = parent
 
 local function capacity(d)
   local total = 0
