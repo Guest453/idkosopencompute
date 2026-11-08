@@ -298,7 +298,7 @@ end
     win:text(4,7,"host drives are protected; physical media is read-only",MUTED,PANEL)
     action("rescan",w-15,6,12,"scan disks")
     local row=9
-    for i=1,math.min(#physical,math.max(1,h-14)) do
+    for i=1,math.min(#physical,math.max(1,h-15)) do
       local item=physical[i]
       local match=selectedDevice==item.address
       local shade=match and 0x2d527d or (i%2==0 and 0x1b2d45 or PANEL)
