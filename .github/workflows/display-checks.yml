@@ -1,0 +1,32 @@
+name: idk OS display validation
+on:
+  push:
+    paths:
+      - 'src/system/core.lua'
+      - 'src/system/core_next.lua'
+      - 'src/system/ui.lua'
+      - 'src/apps/settings.app/main.lua'
+      - 'image.lua'
+      - 'updates/update11.os'
+      - '.github/workflows/display-checks.yml'
+  workflow_dispatch:
+jobs:
+  lua-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua compiler
+        run: sudo apt-get update -qq && sudo apt-get install -y lua5.3
+      - name: Compile all system and built-in app Lua
+        run: |
+          find src -type f -name '*.lua' -print0 | xargs -0 -n1 luac5.3 -p
+          luac5.3 -p image.lua
+          luac5.3 -p updates/update11.os
+      - name: Verify display defaults and custom resolution wiring
+        run: |
+          grep -Fq 'return "balanced"' src/system/ui.lua
+          grep -Fq 'width, height = 80, 25' src/system/core_next.lua
+          grep -Fq 'width, height = 80, 25' src/system/core.lua
+          grep -Fq 'savedDisplaySize()' src/system/core_next.lua
+          grep -Fq 'savedDisplaySize()' src/system/core.lua
+          grep -Fq 'applyDisplay({width=width, height=height})' src/apps/settings.app/main.lua
