@@ -672,7 +672,7 @@ function game.tick(input)
   local upper = camCeiling - 6 - CAMEYE
   if upper < lower then upper = lower end
   local wantz = math.max(lower, math.min(upper, p.z + CAMHEIGHT))
-  cam.z = cam.z + (wantz - cam.z) * 0.30
+  cam.z = math.max(lower, math.min(upper, cam.z + (wantz - cam.z) * 0.30))
 
 end
 
