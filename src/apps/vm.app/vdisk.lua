@@ -137,7 +137,8 @@ function M.save(d)
   local parts = {MAGIC, tostring(d.limit), "\n"}
   for _, e in ipairs(entries) do
     parts[#parts + 1] = e[1] .. tostring(#e[2]) .. ":" .. tostring(#e[3]) .. ":"
-    parts[#parts + 1], parts[#parts + 1] = e[2], e[3]
+    parts[#parts + 1] = e[2]
+    parts[#parts + 1] = e[3]
   end
   local result = table.concat(parts)
   if #result > MAX_IMAGE + 8192 then return nil, "disk file exceeds image limit" end
@@ -190,7 +191,7 @@ function M.load(path)
     if not plen or plen < 1 or plen > MAX_PATH or not length or length < 0 or length > MAX_IMAGE then
       return nil, "bad VHD lengths"
     end
-    if b + plen + length > #src + 1 then return nil, "truncated VHD entry" end
+    if b + plen + length > #src then return nil, "truncated VHD entry" end
     local name = src:sub(b+1,b+plen)
     local data = src:sub(b+plen+1,b+plen+length)
     if canon(name) ~= name then return nil, "unsafe VHD path" end
@@ -198,6 +199,9 @@ function M.load(path)
     pos = b + plen + length + 1
   end
   if capacity(d) > d.limit then return nil, "VHD exceeds its declared capacity" end
+  for name in pairs(d.files) do
+    if not d.dirs[parent(name)] then return nil, "VHD has a missing parent directory" end
+  end
   return d
 end
 return M
