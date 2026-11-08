@@ -190,13 +190,16 @@ return function(app)
     last = now
     acc = acc + dt
     local steps = 0
-    while acc >= 1 / TICRATE and steps < 4 do
+    while acc >= 1 / TICRATE and steps < 6 do
       game.tick(input)
       game.time = game.time + 1 / TICRATE
       acc = acc - 1 / TICRATE
       steps = steps + 1
     end
-    if steps == 0 then acc = 0 end
+    -- Never throw away fractional ticks: with a faster renderer the old
+    -- reset made Sonic freeze because a frame arrived before 1/35 second.
+    -- Bound catch-up after stalls so a slow machine cannot spiral.
+    if acc > 6 / TICRATE then acc = 6 / TICRATE end
 
     local sprites = game.frame()
     local fg, bg = render.frame(level, game.cam, sprites, game.cam.i)
