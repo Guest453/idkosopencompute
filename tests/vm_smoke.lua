@@ -17,6 +17,13 @@ local program=[[
 local gpu=component.gpu
 assert(component.isAvailable("gpu"))
 assert(component.proxy(component.list("gpu")())==gpu)
+assert(component.list("gpu")[gpu.address]=="gpu")
+assert(component.list("filesystem")[component.filesystem.address]=="filesystem")
+local seen={}
+for addr,kind in component.list("filesystem") do
+  seen[addr]=kind
+end
+assert(seen[component.filesystem.address]=="filesystem")
 gpu.set(1,1,"HELLO")
 local signal,address,char,code=computer.pullSignal()
 assert(signal=="key_down")
@@ -76,6 +83,11 @@ local media={
   ["/init.lua"]=[[
 local gpu=component.gpu
 assert(computer.getBootAddress()=="real-floppy-1")
+assert(component.list("filesystem")["real-floppy-1"]=="filesystem")
+assert(component.proxy("real-floppy-1").address=="real-floppy-1")
+local disks={}
+for address,kind in component.list("filesystem") do disks[address]=kind end
+assert(disks["real-floppy-1"]=="filesystem")
 local h=assert(component.invoke("real-floppy-1","open","/boot.lua","r"))
 local data=assert(component.invoke("real-floppy-1","read",h,8192))
 assert(component.invoke("real-floppy-1","close",h))
