@@ -439,7 +439,18 @@ function machine.start(disk, options)
     return init()
   end
   vm.env=env
-  vm.co=coroutine.create(bootChunk)
+  local function newCpu()
+    local co=coroutine.create(bootChunk)
+    -- When debug hooks are available, stop guest tight loops before they
+    -- monopolize the host desktop. This is not a hard memory/security limit.
+    if debug and type(debug.sethook)=="function" then
+      pcall(debug.sethook,co,function()
+        error("guest exceeded CPU instruction budget; yield with computer.pullSignal()",0)
+      end,"",150000)
+    end
+    return co
+  end
+  vm.co=newCpu()
   function vm.pushSignal(...)
     if #vm.queue<48 then vm.queue[#vm.queue+1]={...} end
   end
@@ -451,7 +462,9 @@ function machine.start(disk, options)
     end
     local event
     if #vm.queue>0 then event=table.remove(vm.queue,1) end
-    local ok,what,arg=coroutine.resume(vm.co,event and unpack(event) or nil)
+    local ok,what,arg
+    if event then ok,what,arg=coroutine.resume(vm.co,unpack(event))
+    else ok,what,arg=coroutine.resume(vm.co) end
     vm.waiting=false
     vm.deadline=nil
     if not ok then
@@ -465,7 +478,7 @@ function machine.start(disk, options)
       textOut("\nVM POWERED OFF\n")
     elseif what=="shutdown" then
       if arg then
-        vm.co=coroutine.create(bootChunk)
+        vm.co=newCpu()
         resetScreen()
         vm.cursorX,vm.cursorY=1,1
       else
