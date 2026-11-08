@@ -250,7 +250,7 @@ local function exposedFof(lv, sector, neighbour, z)
   local list = lv.fofsBySector and lv.fofsBySector[sector]
   if not list then return nil end
   for _, f in ipairs(list) do
-    if f.solid and z >= f.btm and z <= f.top then
+    if f.solid and not f.invisible and z >= f.btm and z <= f.top then
       local same = false
       local other = lv.fofsBySector[neighbour]
       if other then
@@ -310,7 +310,7 @@ local function renderFrame(lv, cam, sprites, tick)
         local volumes = lv.fofsBySector and lv.fofsBySector[s]
         if volumes then
           for _, f in ipairs(volumes) do
-            if f.solid then
+            if f.solid and not f.invisible then
               if rayTan > 0 and eyeZ > f.top then
                 local d = (eyeZ - f.top) / rayTan
                 if d > 0 and d < dmin then dmin, kind, planeFof = d, 2, f end
@@ -346,7 +346,7 @@ local function renderFrame(lv, cam, sprites, tick)
             if wt then
               if eyeZ > wt then
                 if tanh > 0 then
-                  local dwt = (eyeZ - wt) / tanh
+                  local dwt = (eyeZ - wt) / rayTan
                   if dwt > 0 and dwt < dmin then
                     local rip = sin(dwt * 0.09 + tick * 0.11 + col * 0.35) * 0.5 + 0.5
                     r, g, b = mix(30 + rip * 30, 70 + rip * 36, 160 + rip * 50, dwt)
@@ -380,7 +380,7 @@ local function renderFrame(lv, cam, sprites, tick)
           if not blocked then
             local f = exposedFof(lv, s, bs, h) or exposedFof(lv, bs, s, h)
             if f then
-              local color = f.topcol
+              local color = f.sidecol or f.topcol
               local light = lv.slight[s] or 1
               local r, g, b = mix(floor(color / 65536) % 256 * light,
                                   floor(color / 256) % 256 * light,
