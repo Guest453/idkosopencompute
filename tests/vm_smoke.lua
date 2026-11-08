@@ -66,6 +66,77 @@ local reopened=assert(diskapi.load(disk.path))
 assert(diskapi.read(reopened,"/init.lua")==program)
 assert(diskapi.read(reopened,"/guest-output.txt")=="saved from guest")
 assert(diskapi.read(reopened,"/renamed.txt")=="root data")
+-- Real filesystem passthrough smoke test: selected read-only OC media should
+-- boot its own init.lua, not the bundled fallback script in the VHD.
+local drivesFile=assert(io.open(base.."drives.lua","r"))
+local drivesSrc=drivesFile:read("*a")
+drivesFile:close()
+local drives=assert(load(drivesSrc,"=drives.lua","t",_G))()
+local media={
+  ["/init.lua"]=[[
+local gpu=component.gpu
+assert(computer.getBootAddress()=="real-floppy-1")
+local h=assert(component.invoke("real-floppy-1","open","/boot.lua","r"))
+local data=assert(component.invoke("real-floppy-1","read",h,8192))
+assert(component.invoke("real-floppy-1","close",h))
+assert(data=="FLOPPY")
+gpu.set(1,1,"FLOPPY BOOT")
+computer.shutdown(false)
+]],
+  ["/boot.lua"]="FLOPPY",
+}
+local handles={}
+local nextHandle=0
+local mock={}
+function mock.list(kind)
+  local emitted=false
+  return function()
+    if not emitted and (not kind or kind=="filesystem") then
+      emitted=true
+      return "real-floppy-1","filesystem"
+    end
+  end
+end
+function mock.invoke(address,method,...)
+  assert(address=="real-floppy-1")
+  local args={...}
+  if method=="isReadOnly" then return true end
+  if method=="getLabel" then return "OpenOS floppy" end
+  if method=="spaceTotal" then return 640*1024 end
+  if method=="spaceUsed" then return 7000 end
+  if method=="exists" then return media[args[1]]~=nil end
+  if method=="isDirectory" then return args[1]=="/" end
+  if method=="size" then return #(media[args[1]] or "") end
+  if method=="open" then
+    if args[2]~="r" or not media[args[1]] then return nil,"not found" end
+    nextHandle=nextHandle+1
+    handles[nextHandle]={data=media[args[1]],pos=1}
+    return nextHandle
+  end
+  if method=="read" then
+    local h=handles[args[1]]
+    if not h or h.pos>#h.data then return nil end
+    local out=h.data:sub(h.pos,h.pos+args[2]-1)
+    h.pos=h.pos+#out
+    return out
+  end
+  if method=="close" then handles[args[1]]=nil return true end
+  if method=="list" then return {"init.lua","boot.lua"} end
+  return nil,"unsupported"
+end
+local found=drives.discover(mock,"host-boot")
+assert(#found==1 and found[1].bootable and found[1].readonly)
+local drive=assert(drives.mount(mock,found[1]))
+assert(drive.write("/init.lua","BAD")==nil)
+local second=guestMachine.start(reopened,{width=40,height=12,ram=256,
+  uptime=function() return now end,drive=drive})
+second.step()
+assert(second.status=="halted",second.error)
+assert(second.cells[1]=="F")
+assert(second.cells[2]=="L")
+assert(second.bootDevice=="real-floppy-1")
+assert(second.stop())
 os.remove(disk.path)
 os.remove(disk.path..".bak")
 print("vm smoke test passed")
+
