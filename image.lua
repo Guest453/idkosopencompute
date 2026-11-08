@@ -1,5 +1,5 @@
 return {
-  version = 12,
+  version = 13,
   files = {
     {source="src/init.lua", target="/init.lua"},
     {source="src/system/version.lua", target="/idkos/version.lua"},
@@ -35,6 +35,7 @@ return {
     {source="src/apps/vm.app/manifest.lua", target="/idkos/apps/vm.app/manifest.lua"},
     {source="src/apps/vm.app/main.lua", target="/idkos/apps/vm.app/main.lua"},
     {source="src/apps/vm.app/vdisk.lua", target="/idkos/apps/vm.app/vdisk.lua"},
-    {source="src/apps/vm.app/machine.lua", target="/idkos/apps/vm.app/machine.lua"}
+    {source="src/apps/vm.app/machine.lua", target="/idkos/apps/vm.app/machine.lua"},
+    {source="src/apps/vm.app/drives.lua", target="/idkos/apps/vm.app/drives.lua"}
   }
 }
