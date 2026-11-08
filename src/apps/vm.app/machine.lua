@@ -237,6 +237,12 @@ function machine.start(disk, options)
     turnOff=function() return true end}
   local keyboard={isKeyDown=function() return false end}
 
+  -- Expose the virtual addresses on proxies as OpenOS expects.
+  gpu.address=componentAddress("gpu")
+  fs.address=componentAddress("filesystem")
+  screen.address=componentAddress("screen")
+  keyboard.address=componentAddress("keyboard")
+  eeprom.address=componentAddress("eeprom")
   local registry={
     [componentAddress("gpu")]={type="gpu",proxy=gpu},
     [componentAddress("screen")]={type="screen",proxy=screen},
@@ -244,23 +250,26 @@ function machine.start(disk, options)
     [componentAddress("eeprom")]={type="eeprom",proxy=eeprom},
     [componentAddress("keyboard")]={type="keyboard",proxy=keyboard}}
   if physical and physicalAddress then
+    physical.address=physicalAddress
     registry[physicalAddress]={type="filesystem",proxy=physical}
   end
   local component={}
   function component.list(kind,exact)
-    local keys={}
+    -- OpenComputers returns a callable lookup table, not just an iterator.
+    -- OpenOS filesystem.proxy uses component.list("filesystem")[address],
+    -- while for-loops iterate that same value.
+    local found={}
     for address,item in pairs(registry) do
-      if kind==nil or item.type==kind or (not exact and item.type:find(tostring(kind),1,true)) then
-        keys[#keys+1]=address
+      if kind==nil or item.type==kind or
+          (not exact and item.type:find(tostring(kind),1,true)) then
+        found[address]=item.type
       end
     end
-    table.sort(keys)
-    local n=0
-    return function()
-      n=n+1
-      local addr=keys[n]
-      return addr,addr and registry[addr].type or nil
-    end
+    return setmetatable(found,{
+      __call=function(self,_,previous)
+        return next(self,previous)
+      end
+    })
   end
   function component.proxy(address)
     local item=registry[address]
