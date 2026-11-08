@@ -12,7 +12,9 @@ local JUMPZ = 9.75
 local RADIUS = 14
 local HEIGHT = 26
 local CAMDIST = 160     -- srb2 cam_dist
-local CAMHEIGHT = 8     -- camera hovers this high; the renderer's EYE (41 above
+local CAMHEIGHT = 8
+local CAMEYE = 41
+local STEPHEIGHT = 24     -- camera hovers this high; the renderer's EYE (41 above
                         -- the camera) lands at the srb2 eye height above the feet
 local VIEWDIST = 2600
 
@@ -51,10 +53,11 @@ function game.init(level, S, art)
   game.S = S
   game.art = art or {}
   -- the renderer's yaw runs opposite to a doom mapthing angle, so negate it
-  game.cam = { x = level.startx, y = level.starty, z = 0,
+  local startFloor = game.floorAt(level.startx, level.starty)
+  game.cam = { x = level.startx, y = level.starty, z = startFloor + CAMHEIGHT,
                yaw = -math.rad(level.startangle or 0), i = 0 }
   game.player = {
-    x = level.startx, y = level.starty, z = 0,
+    x = level.startx, y = level.starty, z = startFloor,
     vx = 0, vy = 0, momz = 0,
     rings = 0, lives = 3, shield = false, invuln = 0, speedup = 0,
     onGround = true, water = false, air = 10, rolling = false,
@@ -63,7 +66,7 @@ function game.init(level, S, art)
   game.time = 0
   game.msg = ""
   game.msgT = 0
-  game.check = { x = level.startx, y = level.starty, z = 0, set = false }
+  game.check = { x = level.startx, y = level.starty, z = startFloor, set = false }
   game.levelTime = 0
   game.entities = {}
   game.deco = {}
@@ -127,37 +130,27 @@ function game.sectorAt(x, y)
   return 1
 end
 
--- floor height including any solid floor-over-floor slab standing over it
-function game.floorAt(x, y)
+-- All floor-over-floor surfaces are attached to their actual tagged target
+-- sector, not approximated by the outline of a remote control sector.
+-- maxTop limits a support lookup to surfaces the player can actually reach.
+function game.floorAt(x, y, maxTop)
   local lv = game.level
-  local fh = lv.sfh[game.sectorAt(x, y)] or 0
-  local fofs = lv.fofs
-  for i = 1, #fofs do
-    local f = fofs[i]
-    if f.solid and f.top > fh and game.insideFof(f, x, y) then fh = f.top end
-  end
-  return fh
-end
-
--- point inside a floor-over-floor slab.  the slab's tagged lines form an edge
--- soup, tested with the even-odd rule; degenerate groups (fewer than three
--- edges) fall back to the old bounding-circle approximation.
-function game.insideFof(f, x, y)
-  if x < f.minx - 2 or x > f.maxx + 2 or y < f.miny - 2 or y > f.maxy + 2 then return false end
-  local ex, ey = f.ex, f.ey
-  local n = #ex
-  if n < 6 then
-    local dx, dy = x - f.cx, y - f.cy
-    return dx * dx + dy * dy <= f.rad * f.rad
-  end
-  local inside = false
-  for i = 1, n, 2 do
-    local y1, y2 = ey[i], ey[i + 1]
-    if (y1 > y) ~= (y2 > y) then
-      if x < ex[i] + (y - y1) * (ex[i + 1] - ex[i]) / (y2 - y1) then inside = not inside end
+  local sector = game.sectorAt(x, y)
+  local floorZ = lv.sfh[sector] or 0
+  local list = lv.fofsBySector and lv.fofsBySector[sector]
+  if list then
+    local limit = maxTop or (floorZ + STEPHEIGHT)
+    for _, f in ipairs(list) do
+      if f.solid and f.top > floorZ and f.top <= limit then
+        floorZ = f.top
+      end
     end
   end
-  return inside
+  return floorZ
+end
+
+function game.insideFof(f, x, y)
+  return f.sec == game.sectorAt(x, y)
 end
 
 local function collide(px, py, r)
@@ -206,46 +199,30 @@ local function collide(px, py, r)
   return hit
 end
 
--- push a point out of the solid-line blockmap without touching any velocity.
--- used to keep the chase camera on the player's side of walls: the bsp walker
--- renders garbage when the camera ends up inside or behind one, which is what
--- made the ground seem to break at corners and after springs.
-local function pushOut(px, py, r)
+-- Clip chase camera rays against true static walls instead of pushing the
+-- camera to the arbitrary side of a wall. That old push-out could teleport
+-- the camera through a partition, causing the BSP ground to disintegrate.
+local function cameraSafe(x0, y0, x1, y1)
   local lv = game.level
-  local CS = lv.cellSize
-  local bax, bay, bbx, bby = lv.bax, lv.bay, lv.bbx, lv.bby
-  local cells = lv.cells
-  local cx, cy = math.floor(px / CS), math.floor(py / CS)
-  for _ = 1, 3 do
-    for dx = -1, 1 do
-      local col = cells[cx + dx]
-      if col then
-        for dy = -1, 1 do
-          local cell = col[cy + dy]
-          if cell then
-            for i = 1, #cell do
-              local li = cell[i]
-              local ax, ay = bax[li], bay[li]
-              local ex, ey = bbx[li] - ax, bby[li] - ay
-              local len2 = ex * ex + ey * ey
-              if len2 > 0 then
-                local t = ((px - ax) * ex + (py - ay) * ey) / len2
-                if t < 0 then t = 0 elseif t > 1 then t = 1 end
-                local qx, qy = ax + ex * t, ay + ey * t
-                local ddx, ddy = px - qx, py - qy
-                local d2 = ddx * ddx + ddy * ddy
-                if d2 < r * r and d2 > 0.0001 then
-                  local d = math.sqrt(d2)
-                  px, py = qx + ddx / d * r, qy + ddy / d * r
-                end
-              end
-            end
-          end
-        end
+  local dx, dy = x1 - x0, y1 - y0
+  local distance = math.sqrt(dx * dx + dy * dy)
+  if distance < 0.01 then return x0, y0 end
+  local nearest = 1
+  for i = 1, lv.nsolid do
+    local ax, ay = lv.bax[i], lv.bay[i]
+    local ex, ey = lv.bbx[i] - ax, lv.bby[i] - ay
+    local den = dx * ey - dy * ex
+    if math.abs(den) > 0.00001 then
+      local ox, oy = ax - x0, ay - y0
+      local t = (ox * ey - oy * ex) / den
+      if t > 0 and t < nearest then
+        local u = (ox * dy - oy * dx) / den
+        if u >= 0 and u <= 1 then nearest = t end
       end
     end
   end
-  return px, py
+  nearest = math.max(0, nearest - 18 / distance)
+  return x0 + dx * nearest, y0 + dy * nearest
 end
 
 function game.damage(from)
@@ -372,11 +349,14 @@ function game.tick(input)
   local dl = math.sqrt(dx * dx + dy * dy)
   if dl > 0 then
     dx, dy = dx / dl, dy / dl
-    local ctrl = 0.5
-    if not p.onGround then ctrl = 0.16 end
-    if p.water then ctrl = 0.3 end
-    p.vx = p.vx + dx * ctrl * maxspd
-    p.vy = p.vy + dy * ctrl * maxspd
+    -- Acceleration is measured in map units per TIC, not a fraction of
+    -- max speed. The old 0.5 * 36 hit full speed in two frames.
+    local accel = p.onGround and 2.8 or 0.65
+    if p.water then accel = 0.85 end
+    if not (input.spin and p.onGround) then
+      p.vx = p.vx + dx * accel
+      p.vy = p.vy + dy * accel
+    end
   end
   local spd = math.sqrt(p.vx * p.vx + p.vy * p.vy)
   if spd > maxspd then
@@ -385,10 +365,13 @@ function game.tick(input)
   end
 
   -- friction
-  if p.onGround and not input.spin and p.spin == 0 then
-    p.vx = p.vx * FRICT
-    p.vy = p.vy * FRICT
+  if p.onGround then
+    local drag = p.rolling and 0.965 or FRICT
+    if input.spin then drag = 0.78 end
+    p.vx, p.vy = p.vx * drag, p.vy * drag
     if math.abs(p.vx) < 0.06 and math.abs(p.vy) < 0.06 then p.vx, p.vy = 0, 0 end
+    if p.rolling and not input.spin and
+       p.vx * p.vx + p.vy * p.vy < 48 then p.rolling = false end
   end
 
   -- gravity / water
@@ -423,57 +406,87 @@ function game.tick(input)
     if p.spin > 40 then p.spin = 40 end
   end
   if not input.spin and p.spin > 0 then
-    local ang = math.atan2(p.vy, p.vx)
-    if math.abs(p.vx) < 0.5 and math.abs(p.vy) < 0.5 then
-      ang = math.atan2(-fy, fx)
-    end
-    local dash = 8 + p.spin * 1.8
-    p.vx = math.cos(ang) * dash
-    p.vy = math.sin(ang) * dash
-    p.momz = 2.5
-    p.onGround = false
+    local sp = math.sqrt(p.vx * p.vx + p.vy * p.vy)
+    local dash = math.min(maxspd, 10 + p.spin * 0.65)
+    local mx, my = fx, fy
+    if sp > 3 then mx, my = p.vx / sp, p.vy / sp end
+    p.vx, p.vy = mx * dash, my * dash
+    -- Spindashing is ground movement, not an unexplained aerial bounce.
+    p.momz = 0
     p.rolling = true
     p.spin = 0
   end
 
-  -- move.  srb2 speeds reach 36 units a tic, well past the player radius, so
-  -- the step is swept in small pieces or the player tunnels through walls.
+  -- Swept horizontal movement: one-sided walls are resolved by the blockmap;
+  -- portal step and headroom are checked against the destination sector.
   local speed = math.sqrt(p.vx * p.vx + p.vy * p.vy)
-  local steps = math.ceil(speed / 8)
-  if steps < 1 then steps = 1 elseif steps > 8 then steps = 8 end
+  local steps = math.max(1, math.min(12, math.ceil(speed / 6)))
   for _ = 1, steps do
-    collide(p.x + p.vx / steps, p.y + p.vy / steps, RADIUS)
-  end
-
-  -- vertical
-  local fh = game.floorAt(p.x, p.y)
-  local ch = lv.sch[sec]
-  local onFof = false
-  for i = 1, #lv.fofs do
-    local f = lv.fofs[i]
-    if f.solid and f.top >= fh then
-      if game.insideFof(f, p.x, p.y) then
-        local prev = p.z
-        if prev >= f.top - 0.5 and p.z + p.momz <= f.top then
-          fh = f.top
-          onFof = true
+    local oldX, oldY = p.x, p.y
+    local fromSector = game.sectorAt(oldX, oldY)
+    collide(oldX + p.vx / steps, oldY + p.vy / steps, RADIUS)
+    local nextSector = game.sectorAt(p.x, p.y)
+    if nextSector ~= fromSector then
+      local nextFloor = game.floorAt(p.x, p.y, p.z + STEPHEIGHT)
+      local nextCeiling = lv.sch[nextSector] or 32767
+      local blocked = nextFloor > p.z + STEPHEIGHT or
+                      nextCeiling < math.max(p.z, nextFloor) + HEIGHT
+      local platforms = lv.fofsBySector and lv.fofsBySector[nextSector]
+      if platforms then
+        for _, f in ipairs(platforms) do
+          if f.solid and p.z < f.top and p.z + HEIGHT > f.btm then
+            if not p.onGround or f.top > p.z + STEPHEIGHT or
+               nextCeiling < f.top + HEIGHT then
+              blocked = true
+            end
+          end
         end
-        if f.btm > ch then ch = f.btm end
+      end
+      if blocked then
+        p.x, p.y = oldX, oldY
+        p.vx, p.vy = p.vx * 0.30, p.vy * 0.30
+        break
+      elseif p.onGround and nextFloor > p.z then
+        p.z = nextFloor
+        p.momz = 0
       end
     end
   end
-  p.z = p.z + p.momz
-  if p.z < fh then
-    p.z = fh
+
+  -- Floors and ceilings must be sampled AFTER the horizontal move.
+  -- Landing on top of an FOF and hitting its underside are separate events.
+  local landedSector = game.sectorAt(p.x, p.y)
+  local previousZ = p.z
+  local newZ = p.z + p.momz
+  local floorZ = lv.sfh[landedSector] or 0
+  local ceilingZ = lv.sch[landedSector] or 32767
+  local platforms = lv.fofsBySector and lv.fofsBySector[landedSector]
+  if platforms then
+    for _, f in ipairs(platforms) do
+      if f.solid then
+        if previousZ >= f.top - 0.01 and newZ <= f.top and f.top > floorZ then
+          floorZ = f.top
+        end
+        if p.momz > 0 and previousZ + HEIGHT <= f.btm + 0.01 and
+           newZ + HEIGHT >= f.btm and f.btm < ceilingZ then
+          ceilingZ = f.btm
+        end
+      end
+    end
+  end
+  if newZ + HEIGHT > ceilingZ then
+    newZ = ceilingZ - HEIGHT
+    if p.momz > 0 then p.momz = 0 end
+  end
+  if newZ <= floorZ then
+    newZ = floorZ
     if p.momz < -8 then p.rolling = true end
     p.momz = 0
     p.onGround = true
+  else
+    p.onGround = false
   end
-  if p.z + HEIGHT > ch then
-    p.z = ch - HEIGHT
-    if p.momz > 0 then p.momz = 0 end
-  end
-  if p.z > fh + 0.5 then p.onGround = false end
+  p.z = newZ
 
   -- timers
   if p.invuln > 0 then p.invuln = p.invuln - TIC end
@@ -634,24 +647,26 @@ function game.tick(input)
     end
   end
 
-  -- camera follow
-  -- srb2's chase camera: behind the player along the view angle, eased in,
-  -- then pushed out of the blockmap so it can never end up inside or behind
-  -- a wall (rendering from there is what looked like the ground breaking).
+  -- Follow from the player's actual side of the level, never through walls.
   local cam = game.cam
   local wantx = p.x - math.cos(cam.yaw) * CAMDIST
   local wanty = p.y + math.sin(cam.yaw) * CAMDIST
-  local fh = game.floorAt(wantx, wanty)
-  cam.x, cam.y = pushOut(cam.x + (wantx - cam.x) * 0.3, cam.y + (wanty - cam.y) * 0.3, 16)
-  local wantz = math.max(p.z, fh) + CAMHEIGHT
-  -- keep the camera between the floor it hovers over and the ceiling above it
-  local csec = game.sectorAt(cam.x, cam.y)
-  local cfh = lv.sfh[csec]
-  local cch = lv.sch[csec]
-  if cfh and wantz < cfh + 8 then wantz = cfh + 8 end
-  if cch and wantz > cch - 8 then wantz = cch - 8 end
-  if wantz < p.z + 8 then wantz = p.z + 8 end
-  cam.z = cam.z + (wantz - cam.z) * 0.3
+  wantx, wanty = cameraSafe(p.x, p.y, wantx, wanty)
+  local easedX = cam.x + (wantx - cam.x) * 0.30
+  local easedY = cam.y + (wanty - cam.y) * 0.30
+  cam.x, cam.y = cameraSafe(p.x, p.y, easedX, easedY)
+
+  -- Rendering adds CAMEYE to cam.z. Clamp the actual eye, not the camera
+  -- origin, or low ceilings can put the projection inside solid geometry.
+  local camSector = game.sectorAt(cam.x, cam.y)
+  local camFloor = game.floorAt(cam.x, cam.y, p.z + STEPHEIGHT)
+  local camCeiling = lv.sch[camSector] or 32767
+  local lower = camFloor + 6 - CAMEYE
+  local upper = camCeiling - 6 - CAMEYE
+  if upper < lower then upper = lower end
+  local wantz = math.max(lower, math.min(upper, p.z + CAMHEIGHT))
+  cam.z = cam.z + (wantz - cam.z) * 0.30
+
 end
 
 -- monitor art by srb2 object number
