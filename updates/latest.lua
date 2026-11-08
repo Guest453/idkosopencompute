@@ -1,7 +1,7 @@
 return {
-  version = 9,
-  file = "update9.os",
-  path = "updates/update9.os",
+  version = 10,
+  file = "update10.os",
+  path = "updates/update10.os",
   channel = "main",
-  notes = "installer app to move the os off a floppy, honest download errors, 720p native display, ram staging for small disks"
+  notes = "preinstalled virtual machines, persistent .vhd disk images, guest Lua GPU/computer emulation and custom guest boot scripts"
 }
