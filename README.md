@@ -73,35 +73,44 @@ at startup, inferno safely parses selected map structures, then scales and raste
 
 ## virtual machines (built-in)
 
-The **virtual machines** app is preinstalled in system image version 10.
-It runs cooperative *Lua virtual computers* in a desktop window. It is not
-x86 emulation, a hardware hypervisor, or a complete stock OpenOS computer.
-Guest programs cannot intentionally access the host filesystem; they see
-virtual components and files stored in a per-VM disk image.
+VM Manager is a preinstalled GUI with three separate views: **Machines**,
+**Devices**, and **Console**. It manages named VHD-backed Lua virtual
+computers, their reported RAM, boot order, and an 80x25 guest video buffer.
+The Console shows a clipped, scrollable window onto guest VRAM instead of
+forcing the guest to lower its resolution to fit the host desktop.
 
-Select **new VM**, enter a name and set disk capacity (64, 128, 256, or
-512 KiB) and reported RAM (256, 512, or 1024 KiB). The manager creates
-a single versioned file at /home/VMs/<name>.vhd, then starts a bundled guest
-Lua command shell. The guest has virtual GPU/screen (text cells and colors),
-keyboard, EEPROM, filesystem, computer clock, and signal queue. Its boot
-entry is /init.lua inside the VHD. The shell includes help, dir, cat,
-write, run, df, clear, reboot and shutdown. Guest modules can be stored at
-/lib/*.lua; disk writes persist to the VHD.
+**Physical floppy passthrough:** Devices scans the real OpenComputers
+filesystem component list, shows device labels/addresses and bootable
+status, and allows selecting a read-only non-host disk with `/init.lua`.
+The guest receives a distinct, scoped read-only filesystem component:
+open/read/close/list/exists and related metadata. The physical device's
+original component address is preserved; the VM's own VHD remains another
+filesystem component. The guest's boot address can point to either device.
+The VM then attempts to run the **real `/init.lua` from that disk** and
+read its accompanying libraries, rather than substituting the bundled
+mini guest shell. The VM refuses host boot drives and writable physical
+filesystems; host files are never mounted as a guest filesystem. The
+guest can still write files to its own VHD.
 
-To replace the guest entrypoint with your own Lua program, put its source
-at /home/VMs/guest-init.lua on the host and use **import** in VM Manager.
-The previous boot script is retained inside the VHD as /init.bak.
-Only this explicitly selected host script is imported; guests do not get
-host filesystem APIs. Removing a VHD erases that VM's guest data.
+**Compatibility limitations:** Running OpenOS's own boot code from a real
+floppy is the intended path, but this does not imply that every version of
+OpenOS fully boots or works. The guest provides only a subset of
+OpenComputers GPU, EEPROM, screen, computer, keyboard, and filesystem
+interfaces. Unsupported calls can cause real boot errors in the VM console.
+No internet, redstone, modem, graphics-card page memory, or arbitrary
+peripheral passthrough is implemented. Guest RAM figures are reported
+values, not hard host-memory quotas. The VHD is a bounded logical-file
+container, not a sector-level drive. Guest Lua is not security-isolated
+like a real hypervisor; don't boot unknown scripts as if sandboxed.
 
-Constraints: there is one active guest at a time; CPU execution is cooperative
-and an instruction watchdog is used only when the host Lua debug hook is
-available. Virtual RAM values are informational rather than strict host
-memory quotas. The VHD is a compact custom file container, not an HDD sector
-image. It cannot boot unmodified OpenOS or arbitrary OS images; supporting
-stock OpenOS requires a more complete GPU/OS component emulation layer and a
-way to import its full boot filesystem. Do not run untrusted Lua expecting
-the same isolation as a real hypervisor.
+**Using it:** select a VM on Machines, create one if needed, then choose
+either Virtual Disk or an attached read-only floppy as the boot device
+on Devices. Select Console, or click Start on Machines. An existing
+OpenOS floppy is recognized when its physical filesystem contains
+`/init.lua`. In Console, use the up/down controls to scroll the
+guest's 80x25 display; keyboard events are forwarded when Console is
+selected. To import a custom guest boot script into the VHD, put it at
+`/home/VMs/guest-init.lua` and select Import on Machines.
 
 ## app packages
 
