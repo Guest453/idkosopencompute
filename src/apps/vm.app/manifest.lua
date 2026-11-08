@@ -1,7 +1,7 @@
 return {
   id="vm",
   name="virtual machines",
-  version="0.1.0",
+  version="0.1.1",
   author="idk os",
   entry="main.lua",
   icon="vm",
