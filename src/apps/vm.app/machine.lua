@@ -16,6 +16,7 @@ function machine.start(disk, options)
   local H = math.max(10, math.min(25, tonumber(options.height) or 14))
   local ram = math.max(128, math.min(1024, tonumber(options.ram) or 256)) * 1024
   local vm = {disk=disk,width=W,height=H,ram=ram,status="running",
+    bootDevice=options.drive and options.drive.address or "vhd",
     queue={},dirty=true,started=options.uptime and options.uptime() or 0,
     uptime=options.uptime or function() return 0 end,
     fg=0xdddddd,bg=0x111827, cursorX=1,cursorY=1,
@@ -119,7 +120,9 @@ function machine.start(disk, options)
   function gpu.getPaletteColor(n) return tonumber(n) or 0 end
   function gpu.setPaletteColor(n) return tonumber(n) or 0 end
 
-  local volumes={}
+  local physical=options.drive
+  local physicalAddress=physical and physical.address
+  local guestBootAddress=physicalAddress or componentAddress("filesystem")
   local fs={}
   local function getPath(p)
     local name=diskapi.canon(p)
@@ -240,6 +243,9 @@ function machine.start(disk, options)
     [componentAddress("filesystem")]={type="filesystem",proxy=fs},
     [componentAddress("eeprom")]={type="eeprom",proxy=eeprom},
     [componentAddress("keyboard")]={type="keyboard",proxy=keyboard}}
+  if physical and physicalAddress then
+    registry[physicalAddress]={type="filesystem",proxy=physical}
+  end
   local component={}
   function component.list(kind,exact)
     local keys={}
@@ -281,9 +287,32 @@ function machine.start(disk, options)
     -- A guest-reported budget, not a hard host-allocated or secure RAM quota.
     return math.max(0,vm.ram-diskapi.used(disk)-vm.width*vm.height*12)
   end
-  function computer.getBootAddress() return componentAddress("filesystem") end
-  function computer.setBootAddress(address) return address==componentAddress("filesystem") end
-  function computer.getDeviceInfo() return {} end
+  function computer.getBootAddress() return guestBootAddress end
+  function computer.setBootAddress(address)
+    if not registry[address] or registry[address].type~="filesystem" then
+      return nil,"not a virtual filesystem"
+    end
+    guestBootAddress=address
+    return true
+  end
+  function computer.address() return "idkvm-computer-0001" end
+  function computer.tmpAddress() return nil end
+  function computer.getArchitecture() return "Lua 5.3" end
+  function computer.getArchitectures() return {"Lua 5.3"} end
+  function computer.setArchitecture(arch)
+    return arch=="Lua 5.3" and true or nil,"unsupported CPU architecture"
+  end
+  function computer.energy() return 5000 end
+  function computer.maxEnergy() return 5000 end
+  function computer.isRobot() return false end
+  function computer.users() return {} end
+  function computer.getDeviceInfo()
+    local entries={}
+    for address,item in pairs(registry) do
+      entries[address]={class=item.type,description="idk VM "..item.type}
+    end
+    return entries
+  end
   function computer.pullSignal(timeout)
     return coroutine.yield("signal",tonumber(timeout))
   end
@@ -309,6 +338,17 @@ function machine.start(disk, options)
   env.component,env.computer,env.unicode=component,computer,unicode
   env._VERSION=_VERSION
   env._G=env
+  env.math.maxinteger=math.maxinteger
+  env.debug={traceback=function(message,level)
+    return tostring(message or "guest error")
+  end}
+  env.checkArg=function(index,value,...)
+    local valid=false
+    for i=1,select("#",...) do
+      if type(value)==select(i,...) then valid=true break end
+    end
+    if not valid then error("bad argument #"..tostring(index),2) end
+  end
   local guestFs={}
   for name,value in pairs(fs) do guestFs[name]=value end
   function guestFs.list(path)
@@ -361,8 +401,32 @@ function machine.start(disk, options)
     component=component,computer=computer,filesystem=guestFs,keyboard=keyboard,unicode=unicode,
   }
   env.package={loaded=loaded,path="/lib/?.lua;/?.lua"}
+  local function readBootFile(path)
+    local selected=registry[guestBootAddress]
+    if selected and selected.proxy==physical then
+      local handle,reason=physical.open(path,"r")
+      if not handle then return nil,reason end
+      local chunks,total={},0
+      while true do
+        local part,err=physical.read(handle,4096)
+        if not part then
+          physical.close(handle)
+          if err then return nil,err end
+          break
+        end
+        total=total+#part
+        if total>128*1024 then
+          physical.close(handle)
+          return nil,"boot file exceeds 128 KiB safety limit"
+        end
+        chunks[#chunks+1]=part
+      end
+      return table.concat(chunks)
+    end
+    return diskapi.read(disk,path)
+  end
   local function guestLoad(path)
-    local source,reason=diskapi.read(disk,path)
+    local source,reason=readBootFile(path)
     if not source then return nil,reason end
     local chunk,err=load(source,"=vm:"..tostring(path),"t",env)
     return chunk,err
@@ -373,7 +437,8 @@ function machine.start(disk, options)
     if not chunk then error(reason,2) end
     return chunk()
   end
-  env.load=function(source,name,mode)
+  env.load=function(source,name,mode,sandbox)
+    -- Guest code must not substitute a host global table as its environment.
     return load(source,name or "=vm-string",mode or "t",env)
   end
   env.require=function(name)
@@ -381,7 +446,9 @@ function machine.start(disk, options)
     if type(name)~="string" or not name:match("^[%w%._]+$") then error("unsafe guest module name",2) end
     local relative=name:gsub("%.","/")
     for _,path in ipairs({"/lib/"..relative..".lua","/"..relative..".lua"}) do
-      if diskapi.exists(disk,path) then
+      local exists=physical and guestBootAddress==physicalAddress
+        and physical.exists(path) or diskapi.exists(disk,path)
+      if exists then
         local value=env.dofile(path)
         loaded[name]=value==nil and true or value
         return loaded[name]
@@ -434,8 +501,11 @@ function machine.start(disk, options)
   env.event={pull=computer.pullSignal,push=computer.pushSignal}
 
   local function bootChunk()
+    -- Use exactly the filesystem chosen by the VM boot order. This reads
+    -- an actual OpenOS floppy /init.lua and its library tree when present.
     local init,reason=guestLoad("/init.lua")
-    if not init then error("virtual boot failed: "..tostring(reason),0) end
+    if not init then error("boot device "..tostring(guestBootAddress)..
+      " has no usable /init.lua: "..tostring(reason),0) end
     return init()
   end
   vm.env=env
@@ -496,6 +566,7 @@ function machine.start(disk, options)
     end
   end
   function vm.stop()
+    if physical and physical.closeAll then physical.closeAll() end
     vm.status="halted"
     vm.queue={}
     vm.co=nil
