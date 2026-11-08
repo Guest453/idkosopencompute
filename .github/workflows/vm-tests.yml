@@ -1,0 +1,24 @@
+name: idk VM checks
+on:
+  push:
+    paths:
+      - 'src/apps/vm.app/**'
+      - 'tests/vm_smoke.lua'
+      - 'image.lua'
+      - 'updates/update10.os'
+      - '.github/workflows/vm-tests.yml'
+  workflow_dispatch:
+jobs:
+  vm-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.3
+        run: sudo apt-get update -qq && sudo apt-get install -y lua5.3
+      - name: Parse VM sources
+        run: |
+          for file in src/apps/vm.app/*.lua tests/vm_smoke.lua; do
+            luac5.3 -p "$file"
+          done
+      - name: Run virtual disk and computer smoke test
+        run: lua5.3 tests/vm_smoke.lua
